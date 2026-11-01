@@ -26,16 +26,20 @@ async function api(kind,payload){
 function fail(e){window.toast(e.message);if(root&&!root.querySelector('h1'))root.innerHTML='<h1>Workspace unavailable</h1><p>'+esc(e.message)+'</p><button class="primary" onclick="location.reload()">Try again</button>';}
 function button(text,action,cls='primary'){return '<button class="'+cls+'" data-action="'+action+'">'+esc(text)+'</button>';}
 function header(title,actions=''){return '<header class="topbar"><div><div class="crumb">Company Administration</div><h1>'+esc(title)+'</h1></div><div class="top-actions">'+actions+'</div></header>';}
-function toolbar(){return '<div class="filters"><input id="recordSearch" aria-label="Search records" placeholder="Search records" value="'+esc(query)+'"><select id="statusFilter" aria-label="Filter status"><option value="">All statuses</option>'+[...new Set(records.map(r=>r.status).filter(Boolean))].map(v=>'<option value="'+esc(v)+'" '+(status===v?'selected':'')+'>'+esc(v)+'</option>').join('')+'</select></div>';}
+function toolbar(){
+ const schema=kinds[current][2],field=Array.isArray(schema.status)?'status':current==='users'?'active':null;
+ const choices=field==='active'?['Active','Inactive']:field?[...new Set([...schema.status,...records.map(r=>r.status).filter(Boolean)])]:[];
+ return '<div class="filters"><input id="recordSearch" aria-label="Search records" placeholder="Search records" value="'+esc(query)+'">'+(field?'<select id="statusFilter" aria-label="Filter status"><option value="">All statuses</option>'+choices.map(v=>'<option value="'+esc(v)+'" '+(status===v?'selected':'')+'>'+esc(v)+'</option>').join('')+'</select>':'')+'</div>';
+}
 function table(){
  const fields=Object.keys(kinds[current][2]).filter(k=>!['password','notes','message','details','response'].includes(k));
- const visible=records.filter(r=>(!query||JSON.stringify(r).toLowerCase().includes(query.toLowerCase()))&&(!status||r.status===status));
+ const visible=records.filter(r=>(!query||JSON.stringify(r).toLowerCase().includes(query.toLowerCase()))&&(!status||(current==='users'?(r.active?'Active':'Inactive'):r.status)===status));
  return '<p class="panel-sub" style="padding:0 20px">'+visible.length+' / '+records.length+' records</p><div class="table-scroll"><table class="data-table"><thead><tr>'+fields.map(k=>'<th>'+esc(Array.isArray(kinds[current][2][k])?k:kinds[current][2][k].split('|')[0])+'</th>').join('')+'<th>Actions</th></tr></thead><tbody>'+visible.map(r=>'<tr>'+fields.map(k=>'<td>'+esc(k==='active'?(r.active?'Active':'Inactive'):r[k])+'</td>').join('')+'<td><button class="secondary" data-edit="'+r.id+'">'+(current==='consultations'?'View / edit':'Edit')+'</button> '+(current==='users'?'<a class="secondary" href="/profile.html?user='+r.id+'">Profile</a>':'')+' '+(current!=='users'?'<button class="secondary" data-delete="'+r.id+'">Delete</button>':'')+'</td></tr>').join('')+'</tbody></table></div>'+(!visible.length?'<p class="empty">No records yet. Use “'+esc(kinds[current][1])+'” to get started.</p>':'');
 }
 async function workspace(kind){
  current=kind;query='';status='';records=await api(kind);
  root.innerHTML=header(kinds[kind][0],button('Notifications','notifications','secondary')+button(kinds[kind][1],'new'))+'<section class="panel">'+(kind==='team'?'<p class="body-pad">Staff records are separate from sign-in accounts. <a href="#" data-action="users">Manage sign-in accounts</a> · <a href="#" data-action="attendance">Attendance records</a></p>':'')+(kind==='settings'?'<p class="body-pad">Company contact information. User access and passwords are managed separately.</p>':'')+toolbar()+'<div id="recordsTable">'+table()+'</div></section>';
- $('#recordSearch').oninput=e=>{query=e.target.value;$('#recordsTable').innerHTML=table()};$('#statusFilter').onchange=e=>{status=e.target.value;$('#recordsTable').innerHTML=table()};
+ $('#recordSearch').oninput=e=>{query=e.target.value;$('#recordsTable').innerHTML=table()};if($('#statusFilter'))$('#statusFilter').onchange=e=>{status=e.target.value;$('#recordsTable').innerHTML=table()};
  updateBadge().catch(fail);
 }
 function form(record={}){

@@ -30,7 +30,8 @@ LEGACY_DB = ROOT / "smart_power.db"
 # Windows keeps records outside downloaded ZIP folders. An explicit path can be
 # supplied for a managed deployment; other platforms keep the existing location.
 DB = Path(os.environ["SMART_POWER_DB"]).expanduser().resolve() if os.environ.get("SMART_POWER_DB") else (Path(os.environ["LOCALAPPDATA"]) / "SmartPowerEngineering" / "smart_power.db" if os.name == "nt" and os.environ.get("LOCALAPPDATA") else LEGACY_DB)
-APP_VERSION = "2026.11-profile-reports"
+APP_VERSION = "2026.11-registration"
+IMAGE_MAX_BYTES = 3_500_000
 HOST, PORT = "127.0.0.1", 8000
 SESSION_HOURS = 12
 PBKDF2_ROUNDS = 600_000
@@ -119,8 +120,10 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/auth/setup":
             return self.setup_form()
+        if parsed.path == "/auth/register":
+            return self.register_form()
         if parsed.path == "/auth/login":
-            return self.login_form(parse_qs(parsed.query).get("next", [""])[0])
+            return self.login_form(parse_qs(parsed.query).get("next", [""])[0], position=parse_qs(parsed.query).get("position", ["Admin"])[0])
         if parsed.path == "/api/profile":
             return self.profile_api(parsed.query)
         if parsed.path == "/api/support":
@@ -150,6 +153,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.consultation_submit()
         if parsed.path == "/auth/setup":
             return self.setup_submit()
+        if parsed.path == "/auth/register":
+            return self.register_submit()
         if parsed.path == "/auth/login":
             return self.login_submit()
         if parsed.path == "/auth/logout":
@@ -228,7 +233,39 @@ class Handler(SimpleHTTPRequestHandler):
         safe_next = next_path if next_path.startswith("/") and not next_path.startswith("//") else ""
         msg = f"<p class='error'>{esc(error)}</p>" if error else ""
         self.send_bytes(page("Secure sign in", f"""<div class='brand'>SMART POWER ENGINEERING WORKS</div><h1>Secure sign in</h1><p>Use your company account to enter the correct workspace.</p>{msg}
-<form method='post'><input type='hidden' name='next' value='{esc(safe_next)}'><label>Position<select name='position' required><option value='Admin' {'selected' if position == 'Admin' else ''}>Admin</option><option value='Staff' {'selected' if position == 'Staff' else ''}>Staffs</option></select></label><label>Email<input type='email' name='email' required autocomplete='email'></label><label>Password<input type='password' name='password' required autocomplete='current-password'></label><button>Sign in securely</button></form><p class='note'><a href='/'>Back to company website</a></p>"""))
+<form method='post'><input type='hidden' name='next' value='{esc(safe_next)}'><label>Position<select name='position' required><option value='Admin' {'selected' if position == 'Admin' else ''}>Admin</option><option value='Staff' {'selected' if position == 'Staff' else ''}>Staffs</option></select></label><label>Email<input type='email' name='email' required autocomplete='email'></label><label>Password<input type='password' name='password' required autocomplete='current-password'></label><button>Sign in securely</button></form><p class='note'><a href='/auth/register'>Create account</a> · <a href='/'>Back to company website</a></p>"""))
+
+    def register_form(self, error="", success=False):
+        if not self.has_admin():
+            return self.redirect("/auth/setup")
+        if success:
+            return self.send_bytes(page("Account created", "<div class='brand'>SMART POWER ENGINEERING WORKS</div><h1>Account created</h1><p>Your Staff account is saved. Choose Staffs when signing in.</p><a href='/auth/login?position=Staff'>Sign in to your account</a>"))
+        msg = f"<p class='error' role='alert'>{esc(error)}</p>" if error else ""
+        self.send_bytes(page("Create account", f"""<div class='brand'>SMART POWER ENGINEERING WORKS</div><h1>Create account</h1><p>Create your Staff account. Admin access is managed by an existing administrator.</p>{msg}<form method='post'><label>Full name<input name='name' required minlength='2' maxlength='100' autocomplete='name'></label><label>Email<input name='email' type='email' required maxlength='160' autocomplete='email'></label><label>Password<input name='password' type='password' required minlength='12' maxlength='200' autocomplete='new-password'></label><label>Confirm password<input name='confirm' type='password' required minlength='12' maxlength='200' autocomplete='new-password'></label><button>Create account</button></form><p class='note'><a href='/auth/login'>Already have an account? Sign in</a></p>"""))
+
+    def register_submit(self):
+        if not self.has_admin():
+            return self.redirect("/auth/setup")
+        try:
+            if int(self.headers.get("Content-Length", "0")) > 4096:
+                return self.register_form("Form is too large.")
+            fields = self.fields()
+            name = fields.get("name", "").strip()
+            email = fields.get("email", "").strip().lower()
+            password = fields.get("password", "")
+            if not 2 <= len(name) <= 100 or len(email) > 160 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+                return self.register_form("Enter a valid name and email.")
+            if not 12 <= len(password) <= 200 or password != fields.get("confirm", ""):
+                return self.register_form("Passwords must match and contain 12–200 characters.")
+            with connection() as db:
+                # Public registration never accepts a role supplied by the browser.
+                db.execute("INSERT INTO users(name,email,role,password_hash,created_at) VALUES(?,?,?,?,?)", (name,email,"Staff",hash_password(password),int(time.time())))
+                self.add_record(db,"notifications",{"name":"Staff account created","details":name,"status":"Unread"},None)
+            return self.register_form(success=True)
+        except sqlite3.IntegrityError:
+            return self.register_form("This email already has an account. Sign in instead.")
+        except (ValueError, UnicodeError):
+            return self.register_form("Enter valid account details.")
 
     def login_submit(self):
         f = self.fields(); email, password = f.get("email", "").strip().lower(), f.get("password", "")
@@ -495,7 +532,7 @@ class Handler(SimpleHTTPRequestHandler):
         if self.command in {"GET", "HEAD"}:
             return self.json_response(dict(existing, **dict(user)))
         try:
-            payload = self.json_input(1500000)
+            payload = self.json_input(10_000_000)
             if not self.csrf_ok(payload, account):
                 return self.json_response({"error": "Refresh and try again."}, 403)
             data = payload.get("data")
@@ -516,8 +553,8 @@ class Handler(SimpleHTTPRequestHandler):
                             raise ValueError("Upload a PNG, JPEG or WebP image.")
                         binary = base64.b64decode(match[2], validate=True)
                         valid = {"png": binary.startswith(b"\x89PNG\r\n\x1a\n"), "jpeg": binary.startswith(b"\xff\xd8\xff"), "webp": binary.startswith(b"RIFF") and binary[8:12] == b"WEBP"}
-                        if not valid[match[1]] or len(binary) > 512000:
-                            raise ValueError("Each image must be valid and smaller than 500 KB.")
+                        if not valid[match[1]] or len(binary) > IMAGE_MAX_BYTES:
+                            raise ValueError("Each image must be valid and no larger than 3.5 MB.")
                 else:
                     if len(value) > (2000 if key in {"address", "qualifications"} else 200):
                         raise ValueError("Profile field is too long.")

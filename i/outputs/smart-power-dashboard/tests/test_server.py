@@ -126,5 +126,38 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(json.loads(self.request('/api/me')[2])['role'], 'Admin')
 
 
+    def test_registration_persists_and_cannot_create_admin(self):
+        details = dict(name='Registered Staff', email='new@example.test', password='Register-pass-123', confirm='Register-pass-123', role='Admin')
+        status, _, body = self.request('/auth/register', details, uid=None, form=True)
+        self.assertEqual(status, 200)
+        self.assertIn(b'Account created', body)
+        app.init_db()
+        with app.connection() as db:
+            row = db.execute("SELECT role,password_hash FROM users WHERE email='new@example.test'").fetchone()
+        self.assertEqual(row['role'], 'Staff')
+        self.assertNotEqual(row['password_hash'], details['password'])
+        login = dict(email=details['email'],password=details['password'],position='Staff')
+        self.assertEqual(self.request('/auth/login', login, uid=None, form=True)[0], 303)
+        login['position'] = 'Admin'
+        self.assertEqual(self.request('/auth/login', login, uid=None, form=True)[0], 200)
+        duplicate = self.request('/auth/register', details, uid=None, form=True)[2]
+        self.assertIn(b'already has an account', duplicate)
+        details.update(email='mismatch@example.test', confirm='wrong-password')
+        self.assertIn(b'Passwords must match', self.request('/auth/register', details, uid=None, form=True)[2])
+
+    def test_image_limit_accepts_3_point_5_mb_rejects_larger(self):
+        # A complete PNG plus trailing padding exercises the actual decoded-byte
+        # limit and combined JSON/base64 request size without a large fixture.
+        png = bytes.fromhex('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000b49444154789c636000020000050001a5f645400000000049454e44ae426082')
+        image = png + b'\0' * (3_500_000 - len(png))
+        value = 'data:image/png;base64,' + base64.b64encode(image).decode()
+        self.assertEqual(self.request('/api/profile', {'data': {'photo': value, 'signature': value}}, uid=2)[0], 200)
+        app.init_db()
+        profile = json.loads(self.request('/api/profile', uid=2)[2])
+        self.assertEqual(profile['photo'], value)
+        larger = 'data:image/png;base64,' + base64.b64encode(image + b'0').decode()
+        self.assertEqual(self.request('/api/profile', {'data': {'photo': larger}}, uid=2)[0], 400)
+
+
 if __name__ == '__main__':
     unittest.main()

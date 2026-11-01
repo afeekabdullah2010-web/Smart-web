@@ -51,7 +51,7 @@ Earlier validation: 26 access checks, 66 workflow requests against a temporary d
 ## Login, profiles, reports and support
 
 - Company Administration opens `/auth/login?next=%2Fadmin.html`. Choose Position **Admin** or **Staffs**; the position must match the stored account role. Choosing Admin never upgrades a Staff account.
-- My profile is available to both roles. It saves name/login email, phone, NIC, DOB, address, blood group, employee ID, department, job title, employment type, joining date, qualifications, emergency contact, and bank details. Photo/signature uploads accept PNG, JPEG or WebP up to 500 KB each. Signatures can also be drawn; the stored image is not a cryptographic signature.
+- My profile is available to both roles. It saves name/login email, phone, NIC, DOB, address, blood group, employee ID, department, job title, employment type, joining date, qualifications, emergency contact, and bank details. Photo/signature uploads accept PNG, JPEG or WebP up to 3.5 MB each. Signatures can also be drawn; the stored image is not a cryptographic signature.
 - Staff can read/edit only their own profile. Admin can open another account's profile from User administration → Profile. Role and account activation remain Admin controls.
 - Office support provides the configured office phone/email and a request inbox. Requests persist in SQLite, create Admin notifications, and can receive an office reply/status. Staff see only their own requests. No email or SMS is sent automatically.
 - Reports now download CSV directly from the server with an attachment filename, UTF-8 BOM and Excel-safe cells. Empty exports contain the column headers. Optional dates refer to record creation in Sri Lanka time.
@@ -67,6 +67,15 @@ Restart `python server.py` after installing the new code. Profiles and support t
 
 ### Regression checks
 
-From this folder, run `python -m unittest discover -s tests` (standard library only). Seven regression tests cover position matching, Team persistence, CSV downloads, profile access/validation, support replies, logout and legacy-database migration. Tests use a temporary database.
+From this folder, run `python -m unittest discover -s tests` (standard library only). Nine regression tests cover position matching, Team persistence, CSV downloads, profile access/validation, support replies, logout and legacy-database migration. Tests use a temporary database.
 
 For a real browser check, install Playwright and Chromium, then run `python tests/check_browser.py`. This checks Admin/Staff sign-in, Team persistence after refresh/server restart and Tamil edits, CSV/date downloads, profile photo/drawn signature persistence, support/replies, logout and mobile Staff controls. It uses a temporary database and localhost server. Both checks passed during this update.
+
+
+## Account registration and image/status fixes
+
+Secure sign in includes Create account. New public registrations are permanently saved as Staff accounts with hashed passwords; their chosen position on later sign-ins must be Staffs. Duplicate emails and mismatched/short passwords show errors. The existing first-Admin setup and Admin-managed account roles remain unchanged; a submitted role cannot grant Admin access.
+
+Status filters now list every valid status for each workspace, even if no records exist in that status. The Users page filters Active/Inactive accounts. Pages without a status field do not show an empty status filter. Search and status selection work together.
+
+Photo and signature limits are 3,500,000 bytes (3.5 MB) **each**, enforced in both the browser and server. The profile request limit permits both images after base64 encoding. Nine server tests and the complete Chromium browser workflow passed, including repeat sign-in after registration, all status choices, and a 3.5 MB image persisted after reload.
