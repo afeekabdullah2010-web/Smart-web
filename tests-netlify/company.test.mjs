@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
-import {createCompany} from '../netlify/lib/company.mjs';
+import {createCompany,validateSetupKey} from '../netlify/lib/company.mjs';
 
 async function fixture(){
  const db=new PGlite();await db.exec(await readFile(new URL('../database/migrations/20261101180000_company.sql',import.meta.url),'utf8'));
@@ -118,4 +118,15 @@ test('every Admin workspace CRUD and public enquiries persist in Postgres',async
   assert.equal((await f.request('/api/consultations',{data:{name:'Career applicant',phone:'0771234567',type:'Career enquiry',message:'Engineering experience and availability'}})).status,201);
   assert.equal((await f.request('/api/admin/consultations',{as:f.admin})).json[0].type,'Career enquiry');
  }finally{await f.db.close()}
+});
+
+
+test('first Admin setup identifies missing, short and mismatched keys without exposing the secret',()=>{
+ const secret='temporary-production-setup-key-123';
+ assert.throws(()=>validateSetupKey(undefined,secret),/Functions scope/);
+ assert.throws(()=>validateSetupKey('short',secret),/too short/);
+ assert.throws(()=>validateSetupKey(secret,'short'),/at least 24/);
+ assert.throws(()=>validateSetupKey(secret,'different-production-key-1234'),/does not match/);
+ assert.doesNotThrow(()=>validateSetupKey(secret,secret));
+ try{validateSetupKey(secret,'different-production-key-1234')}catch(error){assert.equal(error.message.includes(secret),false)}
 });
