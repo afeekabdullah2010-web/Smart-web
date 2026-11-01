@@ -138,3 +138,9 @@ The twelve services, each with its own detailed public page, are:
 AVI, Mobility Solutions and Fentons ICT are excluded. Service descriptions are original Smart Power copy. The Home catalogue, Services page and Services mega-menu share the same twelve destinations. News contains actual website/service information rather than fictional company events. Careers directs enquiries to the existing saved consultation workflow, with the enquiry type preselected; it does not advertise unconfirmed vacancies. Service enquiry links also preselect their service on Contact.
 
 Submenus support click/touch, keyboard Escape and outside-click dismissal, with a scrollable mobile menu. New pages and service copy include Tamil/Sinhala translations. Validation: 13 server regression tests and `python tests/check_company_browser.py` covering navigation, three sample leadership profiles, all twelve service routes, excluded categories, contextual enquiries, language persistence and mobile menus. The existing public browser regression remains available.
+
+## Complete Netlify version
+
+The repository root now contains the complete Netlify/Postgres/Blobs implementation. See the root README for deployment and first-Admin setup. `python server.py` still runs the existing local SQLite application. The hosted build uses the same front-end pages, a server-side function and committed Postgres migrations. Local SQLite data is preserved and is not automatically copied to the hosted database.
+
+A full recheck passed the four existing browser suites and 13 local-server tests. Hosted-backend checks also passed: three Postgres integration workflows and a real HTTPS browser flow including private uploads, Team persistence, attendance/tasks/payroll and restart persistence. These validate local/test environments; production provisioning/deploy status must be checked in Netlify.

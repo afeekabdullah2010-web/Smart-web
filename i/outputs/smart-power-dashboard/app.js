@@ -91,6 +91,7 @@ async function signOut(button){
  button.disabled=true;
  try{const response=await fetch('/auth/logout',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'csrf='+encodeURIComponent(account.csrf)});if(!response.ok)throw Error('Unable to log out. Refresh and try again.');location.href='/';}catch(error){fail(error);button.disabled=false;}
 }
+window.spUploadImage=async(image,userId)=>{if(!image||!image.startsWith('data:')||!window.SMART_POWER_HOSTING?.database)return image;const response=await fetch('/api/uploads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image,user_id:userId||account.id,csrf:account.csrf})});const data=await response.json();if(!response.ok)throw Error(data.error||'Unable to save image.');return data.url;};
 window.spRefreshIdentity=async()=>{const response=await fetch('/api/profile',{cache:'no-store'});if(!response.ok)return;const profile=await response.json();document.querySelectorAll('[data-person]').forEach(n=>n.textContent=profile.name);document.querySelectorAll('.avatar').forEach(n=>{n.textContent=profile.name.split(/\s+/).map(p=>p[0]).slice(0,2).join('');if(profile.photo){const image=document.createElement('img');image.src=profile.photo;image.alt='Profile photo';n.replaceChildren(image)}});};
 async function support(){
  if(!account)throw Error('Please wait for your account to load.');

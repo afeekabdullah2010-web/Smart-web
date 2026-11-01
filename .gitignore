@@ -1,0 +1,8 @@
+dist/
+**/__pycache__/
+*.pyc
+.env
+.env.*
+.netlify/
+node_modules/
+netlify/lib/templates.mjs
