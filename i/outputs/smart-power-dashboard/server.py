@@ -17,7 +17,7 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, unquote
 
 ROOT = Path(__file__).resolve().parent
 DB = ROOT / "smart_power.db"
@@ -27,6 +27,8 @@ PBKDF2_ROUNDS = 600_000
 ADMIN_PAGES = {"admin.html", "projects.html", "team.html", "materials.html", "finance.html", "clients.html", "reports.html", "settings.html"}
 ROLE_PAGES = {"staff-dashboard.html": "Staff"}
 DISABLED_PAGES = {"client-dashboard.html"}
+ACTIVE_ROLES = {"Admin", "Staff"}
+PUBLIC_FILES = {"index.html", "public.js", "public.css", "app.js", "app.css", "auth.css", "assets/smart-power-logo.png"}
 
 
 def connection() -> sqlite3.Connection:
@@ -102,6 +104,9 @@ class Handler(SimpleHTTPRequestHandler):
             return self.user_management()
         return self.serve_static(parsed.path)
 
+    def do_HEAD(self):
+        self.do_GET()
+
     def do_POST(self):
         parsed = urlparse(self.path)
         if parsed.path == "/auth/setup":
@@ -125,7 +130,7 @@ class Handler(SimpleHTTPRequestHandler):
             return None
         with connection() as db:
             row = db.execute("""SELECT s.csrf_token,u.id,u.name,u.email,u.role FROM sessions s
-                JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>? AND u.active=1""",
+                JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>? AND u.active=1 AND u.role IN ('Admin','Staff')""",
                              (token_hash(raw.value), int(time.time()))).fetchone()
         return row
 
@@ -134,7 +139,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not s:
             self.redirect("/auth/login?" + urlencode({"next": self.path}))
             return None
-        if role and s["role"] != role:
+        if role and s["role"] not in {role, "Admin"}:
             self.send_error(HTTPStatus.FORBIDDEN, "This account is not authorised for this page.")
             return None
         return s
@@ -152,7 +157,9 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         if cookie:
             self.send_header("Set-Cookie", cookie)
-        self.end_headers(); self.wfile.write(data)
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(data)
 
     def redirect(self, path: str, cookie=None):
         self.send_response(HTTPStatus.SEE_OTHER); self.send_header("Location", path)
@@ -188,14 +195,14 @@ class Handler(SimpleHTTPRequestHandler):
         f = self.fields(); email, password = f.get("email", "").strip().lower(), f.get("password", "")
         with connection() as db:
             user = db.execute("SELECT * FROM users WHERE email=? AND active=1", (email,)).fetchone()
-        if not user or not verify_password(password, user["password_hash"]):
+        if not user or user["role"] not in ACTIVE_ROLES or not verify_password(password, user["password_hash"]):
             return self.login_form(f.get("next", ""), "Incorrect email or password.")
         raw = secrets.token_urlsafe(32); csrf = secrets.token_urlsafe(24)
         with connection() as db:
             db.execute("DELETE FROM sessions WHERE expires_at<?", (int(time.time()),))
             db.execute("INSERT INTO sessions(token_hash,user_id,csrf_token,expires_at) VALUES(?,?,?,?)", (token_hash(raw), user["id"], csrf, int(time.time()) + SESSION_HOURS * 3600))
         target = f.get("next", "")
-        role_targets = {"Admin": set("/" + p for p in ADMIN_PAGES), "Staff": {"/staff-dashboard.html"}, "Client": {"/client-dashboard.html"}}
+        role_targets = {"Admin": set("/" + p for p in ADMIN_PAGES | set(ROLE_PAGES)), "Staff": {"/staff-dashboard.html"}}
         if target not in role_targets[user["role"]]:
             target = {"Admin": "/admin.html", "Staff": "/staff-dashboard.html"}.get(user["role"], "/")
         cookie = f"sp_session={raw}; Path=/; HttpOnly; SameSite=Lax; Max-Age={SESSION_HOURS * 3600}"
@@ -238,7 +245,16 @@ class Handler(SimpleHTTPRequestHandler):
         self.redirect("/admin/users")
 
     def serve_static(self, raw_path: str):
-        name = raw_path.lstrip("/") or "index.html"
+        # Resolve decoded paths before checking permissions so alternate URL spellings
+        # cannot bypass role guards. Serve only explicitly listed web assets.
+        path = (ROOT / unquote(raw_path).lstrip("/")).resolve()
+        if path == ROOT:
+            path = ROOT / "index.html"
+        if ROOT not in path.parents:
+            self.send_error(HTTPStatus.NOT_FOUND); return
+        name = path.relative_to(ROOT).as_posix()
+        if name not in PUBLIC_FILES | ADMIN_PAGES | set(ROLE_PAGES):
+            self.send_error(HTTPStatus.NOT_FOUND); return
         if name in DISABLED_PAGES:
             self.send_error(HTTPStatus.NOT_FOUND); return
         if name in ADMIN_PAGES:
