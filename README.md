@@ -31,6 +31,7 @@ The database driver enforces TLS with certificate verification. Standard Neon Po
 
 - Server-verified Admin/Staff login, registration, 12-hour Secure/HttpOnly sessions, CSRF checks and role guards.
 - Projects, Team, clients, inventory, invoices, internal notifications, settings and CSV exports in external PostgreSQL.
+- Staff registration, profile changes, attendance, work/task updates and support requests notify Admin. Staff receive private in-app notifications for their assigned tasks, issued payslips, office replies and account/profile updates, with read status and a 30-second unread-count refresh. Notifications are restricted by the signed-in user ID.
 - Private profiles, owner-scoped photos/signatures, attendance, assigned tasks, work updates, payroll and printable/downloadable payslips.
 - Public contact, service and career enquiries saved in the same database for Admin follow-up. Netlify Forms is not used by the complete-app build.
 - Uploaded images use Netlify Blobs behind authenticated file endpoints. Each image is limited to 3.5 MB. Photo and signature are uploaded separately to stay within function request limits. Production and preview file stores are isolated.

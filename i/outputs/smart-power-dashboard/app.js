@@ -101,8 +101,26 @@ async function support(){
  document.body.append(dialog);dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());dialog.showModal();dialog.querySelector('form').onsubmit=async e=>{e.preventDefault();const submit=e.target.querySelector('button');submit.disabled=true;try{const response=await fetch('/api/support',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...Object.fromEntries(new FormData(e.target)),csrf:account.csrf})});const result=await response.json();if(!response.ok)throw Error(result.error);dialog.close();window.toast('Support request sent to the office.');}catch(error){dialog.querySelector('.form-error').textContent=error.message;submit.disabled=false}};
 }
 document.addEventListener('click',e=>{const target=e.target.closest('[data-support]');if(target){e.preventDefault();support().catch(fail)}});
+async function personalNotifications(data){
+ const response=await fetch('/api/notifications',{method:data?'POST':'GET',cache:'no-store',headers:data?{'Content-Type':'application/json'}:{},body:data?JSON.stringify({...data,csrf:account.csrf}):undefined});
+ const result=await response.json();if(!response.ok)throw Error(result.error||'Unable to load notifications.');return result;
+}
+async function refreshPersonalBadge(){const items=await personalNotifications();document.querySelectorAll('[data-my-notifications]').forEach(button=>button.textContent='My notifications · '+items.filter(item=>item.status==='Unread').length);return items}
+async function showPersonalNotifications(){
+ const items=await refreshPersonalBadge(),dialog=document.createElement('dialog');dialog.className='edit-dialog';
+ dialog.innerHTML='<header><h2>My notifications</h2><button class="secondary" data-close>×</button></header><div class="mini-list">'+items.map(item=>'<article class="mini-item"><div><b>'+esc(item.name)+'</b><p>'+esc(item.details)+'</p><small>'+esc(new Date(item.created_at*1000).toLocaleString('en-GB',{timeZone:'Asia/Colombo'}))+'</small></div>'+(item.status==='Unread'?'<button class="secondary" data-read-notice="'+item.id+'">Mark read</button>':'<span>Read</span>')+'</article>').join('')+(!items.length?'<p>No notifications yet.</p>':'')+'</div><p><a href="/staff-tasks.html">My tasks</a> · <a href="/staff-salary.html">My salary</a> · <button class="secondary" data-support>Office support</button></p>';
+ document.body.append(dialog);dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();
+ dialog.onclick=async event=>{const button=event.target.closest('[data-read-notice]');if(!button)return;button.disabled=true;try{await personalNotifications({action:'read',id:Number(button.dataset.readNotice)});const label=document.createElement('span');label.textContent='Read';button.replaceWith(label);await refreshPersonalBadge()}catch(error){button.disabled=false;fail(error)}};dialog.showModal();
+}
+function startNotifications(){
+ if(account.role==='Staff'){
+  const host=document.querySelector('.account-links')||document.querySelector('.sidebar');if(host){const button=document.createElement('button');button.type='button';button.dataset.myNotifications='';button.textContent='My notifications';button.onclick=()=>showPersonalNotifications().catch(fail);host.prepend(button)}
+  refreshPersonalBadge().catch(fail);
+ }
+ setInterval(()=>{if(document.hidden)return;if(account.role==='Staff')refreshPersonalBadge().catch(()=>{});else if(root)updateBadge().catch(()=>{})},30000);
+}
 window.spAccountReady=fetch('/api/me',{credentials:'same-origin',cache:'no-store'}).then(async response=>{
- if(response.redirected||!response.ok){location.href='/auth/login';return null;}account=await response.json();document.querySelectorAll('[data-person]').forEach(n=>n.textContent=account.name);document.querySelectorAll('[data-role]').forEach(n=>n.textContent=account.role);document.querySelectorAll('[data-signout],#staffSignout').forEach(b=>b.onclick=()=>signOut(b));document.querySelectorAll('[data-admin-only]').forEach(n=>n.hidden=account.role!=='Admin');document.querySelectorAll('[data-staff-only]').forEach(n=>n.hidden=account.role!=='Staff');window.spRefreshIdentity().catch(fail);
+ if(response.redirected||!response.ok){location.href='/auth/login';return null;}account=await response.json();startNotifications();document.querySelectorAll('[data-person]').forEach(n=>n.textContent=account.name);document.querySelectorAll('[data-role]').forEach(n=>n.textContent=account.role);document.querySelectorAll('[data-signout],#staffSignout').forEach(b=>b.onclick=()=>signOut(b));document.querySelectorAll('[data-admin-only]').forEach(n=>n.hidden=account.role!=='Admin');document.querySelectorAll('[data-staff-only]').forEach(n=>n.hidden=account.role!=='Staff');window.spRefreshIdentity().catch(fail);
  if(root){const page=location.pathname.split('/').pop();const map={'projects.html':'projects','team.html':'team','materials.html':'materials','finance.html':'invoices','clients.html':'clients','settings.html':'settings'};if(page==='reports.html')reports();else if(map[page])await workspace(map[page]);else await overview();}
  return account;
 }).catch(error=>{fail(error);return null});

@@ -152,3 +152,36 @@ test('Staff registration creates one directory entry and Admin notification; exi
   assert.equal((await f.request('/api/admin/notifications',{as:f.staff})).status,403);
  }finally{await f.db.close()}
 });
+
+test('Staff actions notify Admin and office updates reach only the correct Staff',async()=>{
+ const f=await fixture();try{
+  const task={name:'Private wiring job',user_id:f.staff.id,site:'Site A',due:'2026-12-01',priority:'High',status:'Assigned',notes:'Wiring'};
+  const saved=await f.request('/api/admin/tasks',{as:f.admin,data:{data:task}});assert.equal(saved.status,200,saved.text);
+  let mine=(await f.request('/api/notifications',{as:f.staff})).json;
+  assert.ok(mine.some(n=>n.name==='New task assigned'&&n.details.includes(task.name)));
+  assert.equal((await f.request('/api/notifications',{as:f.other})).json.length,0);
+  assert.equal((await f.request('/api/notifications',{as:f.other,data:{action:'read',id:mine[0].id}})).status,404);
+  assert.equal((await f.request('/api/notifications',{as:f.staff,data:{action:'read',id:mine[0].id},csrf:false})).status,403);
+  assert.equal((await f.request('/api/notifications',{as:f.staff,data:{action:'read',id:mine[0].id}})).status,200);
+  assert.equal((await f.request('/api/notifications',{as:f.staff})).json[0].status,'Read');
+  await f.request('/api/staff/attendance',{as:f.staff,data:{action:'check-in',site:'Site A'}});
+  await f.request('/api/staff/attendance',{as:f.staff,data:{action:'check-out'}});
+  await f.request('/api/profile',{as:f.staff,data:{data:{phone:'0771234567'}}});
+  await f.request('/api/staff/tasks',{as:f.staff,data:{id:saved.json.id,status:'Completed'}});
+  await f.request('/api/staff/updates',{as:f.staff,data:{site:'Site A',summary:'Wiring work finished'}});
+  await f.request('/api/support',{as:f.staff,data:{subject:'Tools needed',message:'Please send the required tools.'}});
+  const messages=(await f.request('/api/admin/notifications',{as:f.admin})).json;
+  for(const title of ['Staff checked in','Staff checked out','Staff profile updated','Staff task updated','Staff work update','Office support request'])assert.ok(messages.some(n=>n.name===title),title);
+  const support=(await f.request('/api/admin/support',{as:f.admin})).json[0];
+  await f.request('/api/admin/support',{as:f.admin,data:{id:support.id,data:{...support,email:f.other.email,response:'Tools will arrive tomorrow',status:'In progress'}}});
+  const pay={name:'PAY-PRIVATE',user_id:f.staff.id,period:'2026-11',basic:80000,allowances:0,deductions:0,paid:0,status:'Draft',notes:''};
+  const salary=await f.request('/api/admin/payroll',{as:f.admin,data:{data:pay}});assert.equal(salary.status,200,salary.text);
+  mine=(await f.request('/api/notifications',{as:f.staff})).json;assert.ok(!mine.some(n=>n.name==='Salary updated'));
+  await f.request('/api/admin/payroll',{as:f.admin,data:{id:salary.json.id,data:{...pay,status:'Issued'}}});
+  mine=(await f.request('/api/notifications',{as:f.staff})).json;
+  assert.ok(mine.some(n=>n.name==='Office support update'&&n.details.includes('Tools will arrive tomorrow')));
+  assert.ok(mine.some(n=>n.name==='Salary updated'));
+  assert.equal((await f.request('/api/notifications?user='+f.staff.id,{as:f.other})).json.length,0);
+  assert.equal((await f.request('/api/notifications')).status,401);
+ }finally{await f.db.close()}
+});
