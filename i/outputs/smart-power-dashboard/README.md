@@ -30,7 +30,7 @@ For deployment, run behind HTTPS and add `Secure` to the session cookie. Configu
 - Staff can open only the Staff workspace and their own signed-in identity; company management pages are forbidden.
 - Client login and Client sessions are disabled, including existing Client accounts. Client records remain available to Admin.
 - Only listed website assets are served; the database, Python source and other internal files cannot be downloaded through this server. GET and HEAD use the same access checks.
-- Staff attendance, salary and task panels currently contain sample data, not personal records. Per-user storage and editing still need implementation before operational use.
+- Staff Attendance, My Tasks and Salary pages now use account-owned records; see the Staff workspace section below.
 
 ## Company Administration update
 
@@ -43,7 +43,7 @@ For deployment, run behind HTTPS and add `Secure` to the session cookie. Configu
 - Reports export actual records to CSV, optionally filtered by creation date. No sample PDF/XLSX downloads are advertised.
 - Consultation requests from the public website are saved for Admin follow-up; the form reports failures accurately.
 - Start the existing server normally. New tables are created automatically without deleting existing accounts. Restart the server after updating files.
-- Staff workspace business panels remain illustrative; this update does not connect personal attendance/payroll data to Staff login accounts.
+- Staff workspace business panels were replaced with account-linked records in the Staff workspace update below.
 
 Earlier validation: 26 access checks, 66 workflow requests against a temporary database, and JavaScript syntax checks. The profile/reports update below also passed real Chromium browser checks.
 
@@ -79,3 +79,19 @@ Secure sign in includes Create account. New public registrations are permanently
 Status filters now list every valid status for each workspace, even if no records exist in that status. The Users page filters Active/Inactive accounts. Pages without a status field do not show an empty status filter. Search and status selection work together.
 
 Photo and signature limits are 3,500,000 bytes (3.5 MB) **each**, enforced in both the browser and server. The profile request limit permits both images after base64 encoding. Nine server tests and the complete Chromium browser workflow passed, including repeat sign-in after registration, all status choices, and a 3.5 MB image persisted after reload.
+
+
+## Staff workspace: real attendance, tasks, updates and payroll
+
+Staff navigation now opens separate Today, Attendance, My Tasks and Salary pages. All `/api/staff/` reads and writes derive ownership from the signed-in account; browser-supplied user IDs cannot access another Staff account's records. There are no seeded salary, attendance or task values.
+
+- Attendance supports one shift per Sri Lanka calendar day, check-in with a site, and check-out using server timestamps. An overnight open shift can be checked out the next day. Duplicate check-in/check-out is rejected and elapsed hours are calculated from recorded timestamps.
+- Admin → Staff tasks assigns work to an active Staff login account, with site, due date, priority, instructions and status. Staff can start and complete their own tasks. Completed tasks cannot be reopened by Staff.
+- Add work update saves site, work details, optional assigned task and optional photo. Upload site photo requires an image. PNG/JPEG/WebP up to 3.5 MB are accepted. Staff see their own updates; Admin → Staff work updates shows submissions/photos. Updates are append-only from Staff.
+- Admin → Staff payroll creates one payroll record per Staff/month, with basic salary, allowances, deductions and paid amount. Drafts stay private to Admin. Set status **Issued** to publish to the Staff Salary page. Net pay and balance are calculated; no banking transfer is performed.
+- Salary supports a printable payslip (use Print / Save as PDF) and an explicitly labelled downloadable HTML payslip. Both use issued payroll data and enforce ownership. Opening or downloading another Staff's payslip is blocked.
+- Admin → Staff time logs shows Staff check-in/out records. These are separate from the existing manual attendance ledger. Team records do not automatically assign login-account payroll/tasks; choose the Staff account explicitly.
+
+Admin can reach these controls from Company overview and the Team page. Existing users and records are preserved; startup adds the new attendance table. Restart `python server.py` after updating.
+
+Validation: 13 standard-library server regression tests, plus `python tests/check_staff_browser.py` for the complete real-browser flow (Admin task/payroll creation; Staff check-in/out, separate pages, task transitions, work updates/photos, payslip download, restart persistence and cross-account isolation). The earlier full browser regression is also retained.

@@ -26,7 +26,7 @@ class ServerTests(unittest.TestCase):
         with app.connection() as db:
             for uid, role in enumerate(['Admin', 'Staff', 'Staff'], 1):
                 db.execute('INSERT INTO users VALUES(?,?,?,?,?,?,?)', (uid, f'{role} {uid}', f'user{uid}@example.test', role, app.hash_password('Test-password-123'), 1, int(time.time())))
-                db.execute('INSERT INTO sessions VALUES(?,?,?,?)', (app.token_hash(str(uid)), uid, 'csrf', int(time.time()) + 600))
+                db.execute('INSERT INTO sessions VALUES(?,?,?,?)', (app.token_hash(str(uid)), uid, 'csrf', int(time.time()) + 12*3600))
 
     def tearDown(self):
         app.DB, app.LEGACY_DB = self.previous_db, self.previous_legacy
@@ -157,6 +157,79 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(profile['photo'], value)
         larger = 'data:image/png;base64,' + base64.b64encode(image + b'0').decode()
         self.assertEqual(self.request('/api/profile', {'data': {'photo': larger}}, uid=2)[0], 400)
+
+
+    def create_staff_task(self):
+        data = dict(name='Assigned site task',user_id=2,site='Nintavur',due='2026-12-01',priority='High',status='Assigned',notes='Follow drawings')
+        response = self.request('/api/admin/tasks', {'data':data})
+        self.assertEqual(response[0],200)
+        return json.loads(response[2])['id']
+
+    def create_staff_payroll(self, status='Issued'):
+        data = dict(name='PAY-001',user_id=2,period='2026-11',basic=80000,allowances=5000,deductions=2000,paid=50000,status=status,notes='Bank transfer')
+        response = self.request('/api/admin/payroll', {'data':data})
+        self.assertEqual(response[0],200)
+        return json.loads(response[2])['id']
+
+    def test_staff_attendance_timestamps_duplicates_and_ownership(self):
+        path='/api/staff/attendance'
+        self.assertEqual(self.request(path,{'action':'check-out'},uid=2)[0],409)
+        self.assertEqual(self.request(path,{'action':'check-in','site':'Site'},uid=2,csrf='bad')[0],403)
+        now=int(time.time())
+        with patch.object(app.time,'time',return_value=now):
+            self.assertEqual(self.request(path,{'action':'check-in','site':'Site'},uid=2)[0],200)
+        self.assertEqual(self.request(path,{'action':'check-in','site':'Site'},uid=2)[0],409)
+        with patch.object(app.time,'time',return_value=now+3600):
+            self.assertEqual(self.request(path,{'action':'check-out'},uid=2)[0],200)
+        app.init_db()
+        row=json.loads(self.request(path,uid=2)[2])[0]
+        self.assertEqual(row['check_out']-row['check_in'],3600)
+        self.assertEqual(json.loads(self.request(path,uid=3)[2]),[])
+        self.assertEqual(self.request(path,{'action':'check-out'},uid=2)[0],409)
+        self.assertEqual(len(json.loads(self.request('/api/admin/stafflogs')[2])),1)
+
+    def test_staff_task_transition_and_work_photo_ownership(self):
+        rid=self.create_staff_task()
+        self.assertEqual(json.loads(self.request('/api/staff/tasks',uid=3)[2]),[])
+        self.assertEqual(self.request('/api/staff/tasks',{'id':rid,'status':'Completed'},uid=3)[0],404)
+        self.assertEqual(self.request('/api/staff/tasks',{'id':rid,'status':'In progress'},uid=2)[0],200)
+        self.assertEqual(self.request('/api/staff/tasks',{'id':rid,'status':'Completed'},uid=2)[0],200)
+        self.assertEqual(self.request('/api/staff/tasks',{'id':rid,'status':'In progress'},uid=2)[0],400)
+        png=bytes.fromhex('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000b49444154789c636000020000050001a5f645400000000049454e44ae426082')
+        photo='data:image/png;base64,'+base64.b64encode(png).decode()
+        data={'site':'Site','summary':'Work completed','task_id':rid,'photo':photo,'user_id':3}
+        self.assertEqual(self.request('/api/staff/updates',data,uid=3)[0],404)
+        self.assertEqual(self.request('/api/staff/updates',data,uid=2)[0],200)
+        app.init_db()
+        row=json.loads(self.request('/api/staff/updates',uid=2)[2])[0]
+        self.assertEqual(row['user_id'],2)
+        self.assertEqual(row['photo'],photo)
+        self.assertEqual(json.loads(self.request('/api/staff/updates',uid=3)[2]),[])
+        self.assertEqual(len(json.loads(self.request('/api/admin/workupdates')[2])),1)
+
+    def test_staff_salary_and_payslip_are_read_only_and_private(self):
+        rid=self.create_staff_payroll()
+        salary=json.loads(self.request('/api/staff/salary',uid=2)[2])[0]
+        self.assertEqual(salary['basic']+salary['allowances']-salary['deductions'],83000)
+        self.assertEqual(json.loads(self.request('/api/staff/salary',uid=3)[2]),[])
+        self.assertEqual(self.request('/api/staff/salary',{'paid':99999},uid=2)[0],403)
+        status,headers,body=self.request(f'/api/staff/payslip?id={rid}&download=1',uid=2)
+        self.assertEqual(status,200)
+        self.assertIn('attachment',headers['Content-Disposition'])
+        self.assertIn(b'83,000.00',body)
+        self.assertIn(b'33,000.00',body)
+        self.assertEqual(self.request(f'/api/staff/payslip?id={rid}',uid=3)[0],404)
+        self.assertEqual(self.request(f'/api/staff/payslip?id={rid}',uid=2,method='HEAD')[2],b'')
+        self.assertEqual(self.request('/api/admin/payroll',uid=2)[0],403)
+
+    def test_draft_payroll_hidden_and_duplicate_month_blocked(self):
+        rid=self.create_staff_payroll(status='Draft')
+        self.assertEqual(json.loads(self.request('/api/staff/salary',uid=2)[2]),[])
+        self.assertEqual(self.request(f'/api/staff/payslip?id={rid}',uid=2)[0],404)
+        data=dict(name='Duplicate',user_id=2,period='2026-11',basic=100,allowances=0,deductions=0,paid=0,status='Issued',notes='')
+        self.assertEqual(self.request('/api/admin/payroll',{'data':data})[0],400)
+        data.update(period='2026-12',paid=101)
+        self.assertEqual(self.request('/api/admin/payroll',{'data':data})[0],400)
 
 
 if __name__ == '__main__':

@@ -30,16 +30,16 @@ LEGACY_DB = ROOT / "smart_power.db"
 # Windows keeps records outside downloaded ZIP folders. An explicit path can be
 # supplied for a managed deployment; other platforms keep the existing location.
 DB = Path(os.environ["SMART_POWER_DB"]).expanduser().resolve() if os.environ.get("SMART_POWER_DB") else (Path(os.environ["LOCALAPPDATA"]) / "SmartPowerEngineering" / "smart_power.db" if os.name == "nt" and os.environ.get("LOCALAPPDATA") else LEGACY_DB)
-APP_VERSION = "2026.11-registration"
+APP_VERSION = "2026.11-staff-workspace"
 IMAGE_MAX_BYTES = 3_500_000
 HOST, PORT = "127.0.0.1", 8000
 SESSION_HOURS = 12
 PBKDF2_ROUNDS = 600_000
 ADMIN_PAGES = {"admin.html", "projects.html", "team.html", "materials.html", "finance.html", "clients.html", "reports.html", "settings.html"}
-ROLE_PAGES = {"staff-dashboard.html": "Staff", "profile.html": None}
+ROLE_PAGES = {"staff-dashboard.html": "Staff", "profile.html": None, "staff-attendance.html": "Staff", "staff-tasks.html": "Staff", "staff-salary.html": "Staff"}
 DISABLED_PAGES = {"client-dashboard.html"}
 ACTIVE_ROLES = {"Admin", "Staff"}
-PUBLIC_FILES = {"index.html", "public.js", "public.css", "app.js", "app.css", "auth.css", "i18n.js", "profile.js", "assets/smart-power-logo.png"}
+PUBLIC_FILES = {"index.html", "public.js", "public.css", "app.js", "app.css", "auth.css", "i18n.js", "profile.js", "staff.js", "assets/smart-power-logo.png"}
 
 
 def connection() -> sqlite3.Connection:
@@ -62,6 +62,11 @@ def init_db() -> None:
               role TEXT NOT NULL CHECK(role IN ('Admin','Staff','Client')),
               password_hash TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
               created_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS staff_attendance (
+              id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, date TEXT NOT NULL,
+              site TEXT NOT NULL, check_in INTEGER NOT NULL, check_out INTEGER,
+              UNIQUE(user_id,date), FOREIGN KEY(user_id) REFERENCES users(id)
             );
             CREATE TABLE IF NOT EXISTS profiles (
               user_id INTEGER PRIMARY KEY, data TEXT NOT NULL, updated_at INTEGER NOT NULL,
@@ -110,6 +115,18 @@ def page(title: str, body: str) -> bytes:
 <style>body{{background:#061d35;color:#15243a;min-height:100vh;display:grid;place-items:center;margin:0;font-family:Segoe UI,Arial,sans-serif}}.card{{width:min(460px,calc(100% - 36px));box-sizing:border-box;background:white;padding:34px;border-radius:18px;box-shadow:0 22px 60px #0006}}h1{{font-size:28px;margin:0 0 8px}}p{{color:#58677b;line-height:1.5}}label{{display:block;font-weight:700;margin:16px 0 6px}}input,select{{width:100%;box-sizing:border-box;border:1px solid #bed0df;border-radius:9px;padding:12px;font:inherit}}button{{margin-top:22px;width:100%;border:0;border-radius:9px;padding:13px;background:#078ee8;color:#fff;font-weight:800;font:inherit;cursor:pointer}}.language-select{{margin-top:12px;padding:8px;width:auto;max-width:100%}}.brand{{color:#078ee8;font-weight:900;letter-spacing:.08em;font-size:13px}}.error{{background:#fff0f0;color:#9b2020;padding:10px;border-radius:8px}}.note{{font-size:13px}}a{{color:#087ac7}}</style></head><body><main class='card'>{body}</main></body></html>""".encode()
 
 
+def validate_staff_image(value):
+    if not isinstance(value,str):
+        raise ValueError("Choose a valid site photo.")
+    match = re.fullmatch(r"data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)",value)
+    if not match:
+        raise ValueError("Choose a PNG, JPEG or WebP site photo.")
+    raw = base64.b64decode(match[2],validate=True)
+    valid = {"png":raw.startswith(b"\x89PNG\r\n\x1a\n"),"jpeg":raw.startswith(b"\xff\xd8\xff"),"webp":raw.startswith(b"RIFF") and raw[8:12]==b"WEBP"}
+    if len(raw)>IMAGE_MAX_BYTES or not valid[match[1]]:
+        raise ValueError("Site photos must be valid and no larger than 3.5 MB.")
+
+
 class Handler(SimpleHTTPRequestHandler):
     server_version = "SmartPower/1.0"
 
@@ -124,6 +141,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.register_form()
         if parsed.path == "/auth/login":
             return self.login_form(parse_qs(parsed.query).get("next", [""])[0], position=parse_qs(parsed.query).get("position", ["Admin"])[0])
+        if parsed.path.startswith("/api/staff/"):
+            return self.staff_api(parsed.path, parsed.query)
         if parsed.path == "/api/profile":
             return self.profile_api(parsed.query)
         if parsed.path == "/api/support":
@@ -143,6 +162,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/staff/"):
+            return self.staff_api(parsed.path, parsed.query)
         if parsed.path == "/api/profile":
             return self.profile_api(parsed.query)
         if parsed.path == "/api/support":
@@ -278,7 +299,7 @@ class Handler(SimpleHTTPRequestHandler):
             db.execute("DELETE FROM sessions WHERE expires_at<?", (int(time.time()),))
             db.execute("INSERT INTO sessions(token_hash,user_id,csrf_token,expires_at) VALUES(?,?,?,?)", (token_hash(raw), user["id"], csrf, int(time.time()) + SESSION_HOURS * 3600))
         target = f.get("next", "")
-        role_targets = {"Admin": set("/" + p for p in ADMIN_PAGES | set(ROLE_PAGES)), "Staff": {"/staff-dashboard.html"}}
+        role_targets = {"Admin": set("/" + p for p in ADMIN_PAGES | set(ROLE_PAGES)), "Staff": {"/staff-dashboard.html", "/staff-attendance.html", "/staff-tasks.html", "/staff-salary.html", "/profile.html"}}
         if target not in role_targets[user["role"]]:
             target = {"Admin": "/admin.html", "Staff": "/staff-dashboard.html"}.get(user["role"], "/")
         cookie = f"sp_session={raw}; Path=/; HttpOnly; SameSite=Lax; Max-Age={SESSION_HOURS * 3600}"
@@ -367,8 +388,12 @@ class Handler(SimpleHTTPRequestHandler):
             "notifications": {"name": "required", "details": "text", "status": ["Unread", "Read"]},
             "consultations": {"name": "required", "phone": "required", "type": "required", "message": "required", "status": ["New", "Contacted", "Closed"]},
             "support": {"name": "required", "requester": "required", "email": "email", "message": "required", "status": ["Open", "In progress", "Resolved"], "response": "text"},
+            "tasks": {"name": "required", "user_id": "staff", "site": "required", "due": "date", "priority": ["Normal", "High", "Urgent"], "status": ["Assigned", "In progress", "Completed"], "notes": "text"},
+            "payroll": {"name": "required", "user_id": "staff", "period": "month", "basic": "number", "allowances": "number", "deductions": "number", "paid": "number", "status": ["Draft", "Issued"], "notes": "text"},
             "settings": {"name": "required", "address": "text", "phone": "required", "email": "text"}
         }
+        if kind in {"stafflogs", "workupdates"}:
+            return self.staff_admin_records(kind)
         if kind == "users":
             return self.users_api(account)
         if kind not in schemas:
@@ -409,6 +434,14 @@ class Handler(SimpleHTTPRequestHandler):
                                 raise ValueError("Enter a valid " + key + ".")
                             data[key] = num
                             continue
+                        if rule == "staff":
+                            uid = int(val)
+                            if not db.execute("SELECT 1 FROM users WHERE id=? AND role='Staff' AND active=1", (uid,)).fetchone():
+                                raise ValueError("Choose an active Staff account.")
+                            data[key] = uid
+                            continue
+                        if rule == "month" and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", val):
+                            raise ValueError("Use YYYY-MM for payroll month.")
                         if rule == "date":
                             import datetime
                             datetime.date.fromisoformat(val)
@@ -417,6 +450,14 @@ class Handler(SimpleHTTPRequestHandler):
                         data[key] = val
                     if kind == "projects" and data["end"] < data["start"]:
                         raise ValueError("End date must be on or after start date.")
+                    if kind == "payroll":
+                        net = data["basic"] + data["allowances"] - data["deductions"]
+                        if net < 0 or data["paid"] > net:
+                            raise ValueError("Check payroll amounts.")
+                        for other in db.execute("SELECT id,data FROM records WHERE kind='payroll'"):
+                            old = json.loads(other["data"])
+                            if other["id"] != record_id and old.get("user_id") == data["user_id"] and old.get("period") == data["period"]:
+                                raise ValueError("Edit the existing payroll record for this Staff/month.")
                     if record_id:
                         db.execute("UPDATE records SET data=? WHERE id=? AND kind=?", (json.dumps(data, ensure_ascii=False), record_id, kind))
                     else:
@@ -429,7 +470,7 @@ class Handler(SimpleHTTPRequestHandler):
                     raise ValueError("Unknown action.")
             self.json_response({"ok": True, "id": record_id})
         except (ValueError, TypeError, UnicodeError):
-            self.json_response({"error": "Check required fields, dates and non-negative amounts; project end must follow start."}, 400)
+            self.json_response({"error": "Check required fields, dates and amounts. Select an active Staff account; payroll must be unique per Staff/month and paid amount cannot exceed net pay."}, 400)
 
     def users_api(self, account):
         if self.command in {"GET", "HEAD"}:
@@ -462,6 +503,132 @@ class Handler(SimpleHTTPRequestHandler):
             self.json_response({"ok": True, "id": uid})
         except (ValueError, TypeError, sqlite3.IntegrityError):
             self.json_response({"error": "Check name, unique email, role and password (12+ characters). Your own Admin account must stay active."}, 400)
+
+    def staff_admin_records(self, kind):
+        if self.command not in {"GET", "HEAD"}:
+            return self.json_response({"error": "Staff-submitted records are read-only here."}, 403)
+        with connection() as db:
+            names = {row["id"]: row["name"] for row in db.execute("SELECT id,name FROM users")}
+            if kind == "stafflogs":
+                result = []
+                for row in db.execute("SELECT * FROM staff_attendance ORDER BY check_in DESC"):
+                    data = dict(row)
+                    data["name"] = names.get(row["user_id"], "Staff")
+                    data["hours"] = round(((row["check_out"] or int(time.time()))-row["check_in"])/3600,2)
+                    result.append(data)
+            else:
+                result = [dict(json.loads(row["data"]),id=row["id"],name=names.get(row["created_by"],"Staff"),created_at=row["created_at"]) for row in db.execute("SELECT * FROM records WHERE kind='workupdates' ORDER BY id DESC")]
+        return self.json_response(result)
+
+    def staff_api(self, path, query):
+        account = self.require("Staff")
+        if not account:
+            return
+        endpoint = path.removeprefix("/api/staff/")
+        uid = account["id"]
+        if endpoint == "payslip":
+            return self.staff_payslip(account, query)
+        if endpoint not in {"attendance", "tasks", "salary", "updates"}:
+            return self.json_response({"error": "Unknown Staff workspace."},404)
+        if self.command in {"GET", "HEAD"}:
+            with connection() as db:
+                if endpoint == "attendance":
+                    rows = [dict(row) for row in db.execute("SELECT * FROM staff_attendance WHERE user_id=? ORDER BY check_in DESC",(uid,))]
+                else:
+                    kind = {"tasks":"tasks","salary":"payroll","updates":"workupdates"}[endpoint]
+                    rows = []
+                    for row in db.execute("SELECT * FROM records WHERE kind=? ORDER BY id DESC",(kind,)):
+                        data = json.loads(row["data"])
+                        if (kind == "workupdates" and row["created_by"] == uid) or (kind != "workupdates" and data.get("user_id") == uid):
+                            if kind == "payroll" and data.get("status") != "Issued":
+                                continue
+                            rows.append(dict(data,id=row["id"],created_at=row["created_at"]))
+            return self.json_response(rows)
+        try:
+            payload = self.json_input(5_000_000)
+            if not self.csrf_ok(payload,account):
+                return self.json_response({"error":"Refresh and try again."},403)
+            now = int(time.time())
+            today = datetime.datetime.fromtimestamp(now,datetime.timezone(datetime.timedelta(hours=5,minutes=30))).date().isoformat()
+            with connection() as db:
+                db.execute("BEGIN IMMEDIATE")
+                if endpoint == "attendance":
+                    action = payload.get("action")
+                    open_shift = db.execute("SELECT * FROM staff_attendance WHERE user_id=? AND check_out IS NULL ORDER BY check_in DESC LIMIT 1",(uid,)).fetchone()
+                    if action == "check-in":
+                        site = str(payload.get("site", "")).strip()
+                        if not site or len(site)>200:
+                            raise ValueError("Enter your site name.")
+                        if open_shift or db.execute("SELECT 1 FROM staff_attendance WHERE user_id=? AND date=?",(uid,today)).fetchone():
+                            return self.json_response({"error":"You already have an attendance record or open shift."},409)
+                        rid = db.execute("INSERT INTO staff_attendance(user_id,date,site,check_in) VALUES(?,?,?,?)",(uid,today,site,now)).lastrowid
+                    elif action == "check-out":
+                        if not open_shift:
+                            return self.json_response({"error":"Check in before checking out."},409)
+                        rid = open_shift["id"]
+                        db.execute("UPDATE staff_attendance SET check_out=? WHERE id=? AND user_id=?",(now,rid,uid))
+                    else:
+                        raise ValueError("Choose check-in or check-out.")
+                elif endpoint == "tasks":
+                    row = db.execute("SELECT * FROM records WHERE id=? AND kind='tasks'",(payload.get("id"),)).fetchone()
+                    data = json.loads(row["data"]) if row else {}
+                    if data.get("user_id") != uid:
+                        return self.json_response({"error":"Task not found."},404)
+                    state = payload.get("status")
+                    if state not in {"In progress","Completed"} or data.get("status") == "Completed":
+                        raise ValueError("Choose a valid task transition.")
+                    data["status"] = state
+                    db.execute("UPDATE records SET data=? WHERE id=?",(json.dumps(data,ensure_ascii=False),row["id"]))
+                    rid = row["id"]
+                    self.add_record(db,"notifications",{"name":"Staff task updated","details":account["name"]+": "+data["name"]+" · "+state,"status":"Unread"},uid)
+                elif endpoint == "updates":
+                    site = str(payload.get("site", "")).strip()
+                    summary = str(payload.get("summary", "")).strip()
+                    photo = payload.get("photo", "")
+                    task_id = payload.get("task_id")
+                    if not site or len(site)>200 or not 3<=len(summary)<=2000:
+                        raise ValueError("Enter site and work details (3–2000 characters).")
+                    if task_id:
+                        row = db.execute("SELECT data FROM records WHERE id=? AND kind='tasks'",(task_id,)).fetchone()
+                        if not row or json.loads(row["data"]).get("user_id") != uid:
+                            return self.json_response({"error":"Task not found."},404)
+                    if photo:
+                        validate_staff_image(photo)
+                    rid = self.add_record(db,"workupdates",{"user_id":uid,"site":site,"summary":summary,"photo":photo,"task_id":task_id,"date":today},uid)
+                    self.add_record(db,"notifications",{"name":"Staff work update","details":account["name"]+": "+summary[:160],"status":"Unread"},uid)
+                else:
+                    return self.json_response({"error":"Salary is managed by Admin."},403)
+            return self.json_response({"ok":True,"id":rid})
+        except (ValueError,TypeError,sqlite3.IntegrityError,binascii.Error) as error:
+            return self.json_response({"error":str(error) or "Check the submitted details."},400)
+
+    def staff_payslip(self, account, query):
+        if self.command not in {"GET", "HEAD"}:
+            return self.json_response({"error":"Payslips are read-only."},405)
+        params = parse_qs(query)
+        try:
+            rid = int(params.get("id",[""])[0])
+        except ValueError:
+            return self.json_response({"error":"Select a payslip."},400)
+        with connection() as db:
+            row = db.execute("SELECT data FROM records WHERE id=? AND kind='payroll'",(rid,)).fetchone()
+            company_row = db.execute("SELECT data FROM records WHERE kind='settings' ORDER BY id DESC LIMIT 1").fetchone()
+        data = json.loads(row["data"]) if row else {}
+        if data.get("user_id") != account["id"] or data.get("status") != "Issued":
+            return self.json_response({"error":"Payslip not found."},404)
+        company = json.loads(company_row["data"]) if company_row else {}
+        net = data["basic"]+data["allowances"]-data["deductions"]
+        items = [("Basic salary",data["basic"]),("Allowances",data["allowances"]),("Deductions",data["deductions"]),("Net salary",net),("Paid",data["paid"]),("Balance due",net-data["paid"])]
+        body = f"<div class='brand'>{esc(company.get('name','SMART POWER ENGINEERING WORKS'))}</div><h1>Salary payslip</h1><p>{esc(account['name'])} · Staff ID {account['id']}</p><p>Month: {esc(data['period'])} · Reference: {esc(data['name'])}</p><table style='width:100%'>"+"".join(f"<tr><td>{label}</td><td style='text-align:right'>LKR {amount:,.2f}</td></tr>" for label,amount in items)+f"</table><p>{esc(data.get('notes',''))}</p><p>Issued payroll record. Paid and balance amounts are shown separately.</p><button onclick='window.print()'>Print / Save as PDF</button><style>@media print{{button{{display:none}}body{{background:white!important}}.card{{box-shadow:none!important;width:100%!important}}}}</style>"
+        output = page("Salary payslip",body)
+        self.send_response(200)
+        self.send_header("Content-Type","text/html; charset=utf-8")
+        self.send_header("Cache-Control","no-store")
+        if params.get("download") == ["1"]:
+            self.send_header("Content-Disposition",f'attachment; filename="smart-power-payslip-{rid}.html"')
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(output)
 
     def report_download(self, query):
         account = self.require("Admin")
