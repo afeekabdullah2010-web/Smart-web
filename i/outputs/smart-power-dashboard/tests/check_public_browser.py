@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory() as tmp:
   # Corporate home keeps the blue theme and a functional project showcase.
   expect(page.get_by_role('heading',name='Engineering ideas. Building tomorrow.',exact=True)).to_be_visible()
   page.locator('[data-project-next]').scroll_into_view_if_needed();page.locator('[data-project-next]').click();expect(page.locator('[data-project-count]')).to_have_text('2 / 3');expect(page.locator('[data-project-slide]:not([hidden]) h3')).to_have_text('Spaces built for momentum');page.locator('[data-project-prev]').click();expect(page.locator('[data-project-count]')).to_have_text('1 / 3');page.locator('[data-project-prev]').focus();page.keyboard.press('ArrowLeft');expect(page.locator('[data-project-count]')).to_have_text('3 / 3')
-  for label,path in [('About Us','about.html'),('Services','services.html'),('Projects','our-projects.html'),('Contact','contact.html'),('Home','index.html')]:
+  for label,path in [('About Us','about.html'),('Services','services.html'),('Projects','our-projects.html'),('Contact Us','contact.html'),('Home','index.html')]:
    page.locator('nav').get_by_role('link',name=label,exact=True).click();page.wait_for_url('**/'+path);expect(page.locator('nav [aria-current=page]')).to_have_text(label);expect(page.get_by_role('heading',level=1)).to_be_visible();assert page.locator('header .portal-btn').count()==0
    for element in page.locator('.will-reveal').all():element.scroll_into_view_if_needed()
    page.wait_for_timeout(800);assert page.locator('.will-reveal:not(.is-visible)').count()==0

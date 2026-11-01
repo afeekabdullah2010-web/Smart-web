@@ -41,6 +41,8 @@ DISABLED_PAGES = {"client-dashboard.html"}
 ACTIVE_ROLES = {"Admin", "Staff"}
 PUBLIC_FILES = {"index.html", "about.html", "services.html", "our-projects.html", "contact.html", "public.js", "public.css", "app.js", "app.css", "auth.css", "i18n.js", "profile.js", "staff.js", "assets/smart-power-logo.png"}
 
+PUBLIC_FILES.update({'service-architecture.html', 'service-security.html', 'service-electrical.html', 'service-fire-safety.html', 'service-hydro.html', 'awards.html', 'service-renewable-energy.html', 'careers.html', 'service-backup-power.html', 'service-industrial-accessories.html', 'leadership.html', 'service-plumbing.html', 'news.html', 'service-air-conditioning.html', 'service-facilities.html', 'service-construction.html', 'privacy-policy.html'})
+
 
 def connection() -> sqlite3.Connection:
     db = sqlite3.connect(DB)

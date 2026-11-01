@@ -113,3 +113,28 @@ The Home page now follows the reference's broad corporate engineering structure 
 The project showcase has previous/next buttons, arrow-key navigation, a live position counter and reduced-motion support. Three-language copy is retained. Other public pages remain separate. Company Administration appears in the footer only, and the removed footer navigation has not been restored.
 
 The public browser regression includes home headline/slider checks alongside desktop/mobile navigation, footer-only login, languages, scroll reveals, contact persistence and reduced-motion tests. Desktop/mobile preview captures were also visually reviewed during development.
+
+## Expanded company pages and service catalogue
+
+All public headers now include News and Careers, with Contact renamed Contact Us. About Us has an accessible submenu for Leadership, Awards and Privacy Policy, and the overview links to the same three pages. Administration remains in the footer only.
+
+Leadership contains three explicitly labelled sample names/positions and original portrait placeholders, as requested, to replace with actual company profiles later. Awards has a publication area without invented awards. The privacy page describes the existing application’s collected records, access rules, session cookie and language storage; review it when hosting or processing practices change.
+
+The twelve services, each with its own detailed public page, are:
+
+1. Full Construction
+2. Solar & Wind Power (grouped to retain twelve categories)
+3. Security & Communication
+4. Electrical Systems
+5. Fire Safety Solutions
+6. Air Conditioning & Ventilation
+7. Plumbing & Gas
+8. Facilities Management
+9. UPS & Battery Backups
+10. Hydro Solutions
+11. Architectural Drawings & 3D Visualisation
+12. Industrial Accessories Trading
+
+AVI, Mobility Solutions and Fentons ICT are excluded. Service descriptions are original Smart Power copy. The Home catalogue, Services page and Services mega-menu share the same twelve destinations. News contains actual website/service information rather than fictional company events. Careers directs enquiries to the existing saved consultation workflow, with the enquiry type preselected; it does not advertise unconfirmed vacancies. Service enquiry links also preselect their service on Contact.
+
+Submenus support click/touch, keyboard Escape and outside-click dismissal, with a scrollable mobile menu. New pages and service copy include Tamil/Sinhala translations. Validation: 13 server regression tests and `python tests/check_company_browser.py` covering navigation, three sample leadership profiles, all twelve service routes, excluded categories, contextual enquiries, language persistence and mobile menus. The existing public browser regression remains available.
