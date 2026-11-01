@@ -1,5 +1,5 @@
 [build]
-  command = "python3 scripts/build_netlify.py"
+  command = "python3 scripts/build_netlify.py && node scripts/migrate-postgres.mjs --netlify-build"
   publish = "dist/site"
 
 [build.environment]
@@ -16,6 +16,9 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  external_node_modules = ["pg"]
 
 [template.environment]
   SMART_POWER_SETUP_KEY = "Private first-Admin setup key (use at least 24 random characters)"
+
+  DATABASE_URL = "External PostgreSQL connection string (private; Builds and Functions scopes)"

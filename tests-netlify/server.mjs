@@ -7,7 +7,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {createCompany} from '../netlify/lib/company.mjs';
 import templates from '../netlify/lib/templates.mjs';
 const [dir,cert,key]=process.argv.slice(2);const db=new PGlite(join(dir,'postgres'));
-if(!existsSync(join(dir,'migrated'))){await db.exec(await readFile('netlify/database/migrations/20261101180000_company.sql','utf8'));await writeFile(join(dir,'migrated'),'yes')}
+if(!existsSync(join(dir,'migrated'))){await db.exec(await readFile('database/migrations/20261101180000_company.sql','utf8'));await writeFile(join(dir,'migrated'),'yes')}
 const pool={query:(...a)=>db.query(...a),connect:async()=>({query:(...a)=>db.query(...a),release(){}})};
 const store={set:async(k,v)=>{const p=join(dir,'uploads',k);await mkdir(resolve(p,'..'),{recursive:true});await writeFile(p,v)},get:async k=>{try{return await readFile(join(dir,'uploads',k))}catch{return null}}};
 const handler=createCompany({pool,store,templates,env:k=>k==='SMART_POWER_SETUP_KEY'?'temporary-owner-test-setup-key-32':undefined});

@@ -4,11 +4,12 @@
   "type": "module",
   "scripts": {
     "build": "python3 scripts/build_netlify.py",
-    "test": "node tests-netlify/company.test.mjs"
+    "test": "node tests-netlify/company.test.mjs && node tests-netlify/database.test.mjs",
+    "migrate": "node scripts/migrate-postgres.mjs"
   },
   "dependencies": {
-    "@netlify/database": "2.0.1",
-    "@netlify/blobs": "11.1.7"
+    "@netlify/blobs": "11.1.7",
+    "pg": "8.23.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.14"

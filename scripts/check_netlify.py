@@ -3,6 +3,7 @@ from pathlib import Path
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 import tempfile
+import json
 from build_netlify import build
 class Links(HTMLParser):
     def __init__(self):super().__init__();self.references=[]
@@ -26,4 +27,8 @@ with tempfile.TemporaryDirectory() as tmp:
     assert '"database":true' in (root/'hosting-config.js').read_text()
     assert 'data-netlify' not in (root/'contact.html').read_text()
     assert (Path(__file__).parents[1]/'netlify/lib/templates.mjs').is_file()
+    repo=Path(__file__).parents[1]
+    assert not (repo/'netlify/database').exists()
+    assert '@netlify/database' not in json.loads((repo/'package.json').read_text())['dependencies']
+    assert (repo/'database/migrations/20261101180000_company.sql').is_file()
     print('PASS: public links/assets, authenticated function routes, private template packaging and database/source exclusion.')

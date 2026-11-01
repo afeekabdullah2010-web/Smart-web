@@ -144,3 +144,8 @@ Submenus support click/touch, keyboard Escape and outside-click dismissal, with 
 The repository root now contains the complete Netlify/Postgres/Blobs implementation. See the root README for deployment and first-Admin setup. `python server.py` still runs the existing local SQLite application. The hosted build uses the same front-end pages, a server-side function and committed Postgres migrations. Local SQLite data is preserved and is not automatically copied to the hosted database.
 
 A full recheck passed the four existing browser suites and 13 local-server tests. Hosted-backend checks also passed: three Postgres integration workflows and a real HTTPS browser flow including private uploads, Team persistence, attendance/tasks/payroll and restart persistence. These validate local/test environments; production provisioning/deploy status must be checked in Netlify.
+
+
+## External PostgreSQL update
+
+The Netlify Database account restriction is resolved by switching the hosted backend to the standard `pg` driver and an external `DATABASE_URL` (for example Neon). The Netlify auto-provisioning dependency/directory were removed; SQL files moved to `database/migrations/`. Production builds apply checksum-tracked migrations without resetting data. Configure DATABASE_URL as a Netlify secret with Builds and Functions scopes before retrying deployment. The local Python/SQLite application is unchanged. See the root README for the exact setup.

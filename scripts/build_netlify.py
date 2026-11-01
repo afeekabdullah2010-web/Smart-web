@@ -40,7 +40,7 @@ def build(destination=DESTINATION):
     (destination/'404.html').write_text('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/public.css"><title>Page not found | Smart Power</title></head><body><main class="page-intro"><h1>Page not found</h1><a class="button solid" href="/">Back to website</a></main></body></html>')
     assert not any((destination/name).exists() for name in templates)
     assert not any(p.suffix in {'.db','.py','.pyc'} for p in destination.rglob('*') if p.is_file())
-    print(f'Full Netlify build ready: {len(public)} public assets, {len(templates)} authenticated pages, Postgres + private Blobs.')
+    print(f'Full Netlify build ready: {len(public)} public assets, {len(templates)} authenticated pages, external Postgres + private Blobs.')
     return destination
 
 if __name__=='__main__':build()

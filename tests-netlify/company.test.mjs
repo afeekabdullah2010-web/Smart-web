@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {createCompany} from '../netlify/lib/company.mjs';
 
 async function fixture(){
- const db=new PGlite();await db.exec(await readFile(new URL('../netlify/database/migrations/20261101180000_company.sql',import.meta.url),'utf8'));
+ const db=new PGlite();await db.exec(await readFile(new URL('../database/migrations/20261101180000_company.sql',import.meta.url),'utf8'));
  const pool={query:(...args)=>db.query(...args),connect:async()=>({query:(...args)=>db.query(...args),release(){}})};
  const files=new Map();const store={set:async(k,v)=>files.set(k,Buffer.from(v)),get:async k=>files.get(k)||null};
  const handler=createCompany({pool,store,templates:{'admin.html':'<h1>Admin</h1>','staff-dashboard.html':'<h1>Staff</h1>','profile.html':'<h1>Profile</h1>'},env:k=>k==='SMART_POWER_SETUP_KEY'?'owner-setup-key-with-32-characters':undefined});
