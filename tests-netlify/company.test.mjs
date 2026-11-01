@@ -45,7 +45,7 @@ test('Postgres CRUD, CSV reports and profile uploads preserve ownership',async()
  const f=await fixture();try{
   const data={name:'Permanent Staff Record',email:'',phone:'0771234567',role:'Engineer',site:'Nintavur',salary:80000,status:'Active'};
   const saved=await f.request('/api/admin/team',{as:f.admin,data:{data}});assert.equal(saved.status,200,saved.text);
-  assert.equal((await f.request('/api/admin/team',{as:f.admin})).json[0].name,data.name);
+  assert.ok((await f.request('/api/admin/team',{as:f.admin})).json.some(row=>row.name===data.name));
   const csv=await f.request('/api/admin/reports?kind=team',{as:f.admin});assert.equal(csv.status,200);assert.match(csv.text,/Permanent Staff Record/);assert.match(csv.headers.get('content-disposition'),/attachment/);
   const profile=await f.request('/api/profile',{as:f.staff,data:{data:{name:'Updated Staff',email:'staff1@example.test',nic:'200012345678',dob:'2000-01-01',phone:'0771234567'}}});assert.equal(profile.status,200,profile.text);
   assert.equal((await f.request('/api/profile?user='+f.staff.id,{as:f.other})).status,403);
@@ -129,4 +129,26 @@ test('first Admin setup identifies missing, short and mismatched keys without ex
  assert.throws(()=>validateSetupKey(secret,'different-production-key-1234'),/does not match/);
  assert.doesNotThrow(()=>validateSetupKey(secret,secret));
  try{validateSetupKey(secret,'different-production-key-1234')}catch(error){assert.equal(error.message.includes(secret),false)}
+});
+
+test('Staff registration creates one directory entry and Admin notification; existing accounts are included',async()=>{
+ const f=await fixture();try{
+  const form={name:'Joined Staff',email:'joined@example.test',password:'Test-password-123',confirm:'Test-password-123'};
+  assert.match((await f.request('/auth/register',{form})).text,/Account created/);
+  let rows=(await f.request('/api/admin/team',{as:f.admin})).json;
+  assert.equal(rows.filter(r=>r.email===form.email).length,1);
+  assert.ok(rows.some(r=>r.email==='staff1@example.test'));
+  assert.ok(!rows.some(r=>r.email==='admin@example.test'));
+  const member=rows.find(r=>r.email===form.email);assert.equal(member.status,'Active');assert.ok(member.user_id);
+  let notices=(await f.request('/api/admin/notifications',{as:f.admin})).json;
+  assert.equal(notices.filter(n=>n.name==='New staff joined'&&n.details.includes(form.email)).length,1);
+  assert.match((await f.request('/auth/register',{form})).text,/already has an account/);
+  await f.request('/api/admin/team',{as:f.admin});
+  notices=(await f.request('/api/admin/notifications',{as:f.admin})).json;
+  assert.equal(notices.filter(n=>n.details.includes(form.email)).length,1);
+  const edited=await f.request('/api/admin/team',{as:f.admin,data:{id:member.id,data:{...member,phone:'0771234567',role:'Engineer',salary:75000}}});assert.equal(edited.status,200,edited.text);
+  rows=(await f.request('/api/admin/team',{as:f.admin})).json;
+  assert.equal(rows.filter(r=>r.user_id===member.user_id).length,1);assert.equal(rows.find(r=>r.id===member.id).salary,75000);
+  assert.equal((await f.request('/api/admin/notifications',{as:f.staff})).status,403);
+ }finally{await f.db.close()}
 });
