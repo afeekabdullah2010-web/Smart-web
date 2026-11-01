@@ -39,7 +39,7 @@ ADMIN_PAGES = {"admin.html", "projects.html", "team.html", "materials.html", "fi
 ROLE_PAGES = {"staff-dashboard.html": "Staff", "profile.html": None, "staff-attendance.html": "Staff", "staff-tasks.html": "Staff", "staff-salary.html": "Staff"}
 DISABLED_PAGES = {"client-dashboard.html"}
 ACTIVE_ROLES = {"Admin", "Staff"}
-PUBLIC_FILES = {"index.html", "public.js", "public.css", "app.js", "app.css", "auth.css", "i18n.js", "profile.js", "staff.js", "assets/smart-power-logo.png"}
+PUBLIC_FILES = {"index.html", "about.html", "services.html", "our-projects.html", "contact.html", "public.js", "public.css", "app.js", "app.css", "auth.css", "i18n.js", "profile.js", "staff.js", "assets/smart-power-logo.png"}
 
 
 def connection() -> sqlite3.Connection:

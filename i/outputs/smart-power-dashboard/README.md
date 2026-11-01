@@ -95,3 +95,13 @@ Staff navigation now opens separate Today, Attendance, My Tasks and Salary pages
 Admin can reach these controls from Company overview and the Team page. Existing users and records are preserved; startup adds the new attendance table. Restart `python server.py` after updating.
 
 Validation: 13 standard-library server regression tests, plus `python tests/check_staff_browser.py` for the complete real-browser flow (Admin task/payroll creation; Staff check-in/out, separate pages, task transitions, work updates/photos, payslip download, restart persistence and cross-account isolation). The earlier full browser regression is also retained.
+
+## Public website pages and motion
+
+The public header is larger and links to separate Home (`index.html`), About Us (`about.html`), Services (`services.html`), Projects (`our-projects.html`) and Contact (`contact.html`) pages. The public Projects filename intentionally differs from the protected Admin `projects.html` route.
+
+Company Administration was removed from the header and remains in the footer. The footer's About/Services/Projects/Contact navigation group was removed. Every public page shares the logo, active navigation, language selector and footer. The consultation form is on Contact; other pages link to it.
+
+Page entry/exit, scroll reveals, card hover and subtle construction-art motion work across the public pages. Reduced-motion preferences disable animation and smooth scrolling. The keyboard skip link focuses main content; mobile navigation supports Escape, and sticky-header offsets adapt to the actual header height. Content remains visible without animation support.
+
+Validated with `python tests/check_public_browser.py`: five page routes, enlarged header and footer cleanup, active navigation, scroll reveals, navigation transitions, keyboard skip, Tamil/Sinhala/English persistence, contact submission storage, mobile layout/menu and reduced motion. The 13 server regression tests also pass.
