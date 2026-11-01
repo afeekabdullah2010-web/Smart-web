@@ -5,6 +5,10 @@ This server intentionally replaces the former browser-only demo password.
 """
 from __future__ import annotations
 
+import csv
+import io
+import datetime
+import binascii
 import base64
 import hashlib
 import hmac
@@ -22,15 +26,19 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse, unquote
 
 ROOT = Path(__file__).resolve().parent
-DB = ROOT / "smart_power.db"
+LEGACY_DB = ROOT / "smart_power.db"
+# Windows keeps records outside downloaded ZIP folders. An explicit path can be
+# supplied for a managed deployment; other platforms keep the existing location.
+DB = Path(os.environ["SMART_POWER_DB"]).expanduser().resolve() if os.environ.get("SMART_POWER_DB") else (Path(os.environ["LOCALAPPDATA"]) / "SmartPowerEngineering" / "smart_power.db" if os.name == "nt" and os.environ.get("LOCALAPPDATA") else LEGACY_DB)
+APP_VERSION = "2026.11-profile-reports"
 HOST, PORT = "127.0.0.1", 8000
 SESSION_HOURS = 12
 PBKDF2_ROUNDS = 600_000
 ADMIN_PAGES = {"admin.html", "projects.html", "team.html", "materials.html", "finance.html", "clients.html", "reports.html", "settings.html"}
-ROLE_PAGES = {"staff-dashboard.html": "Staff"}
+ROLE_PAGES = {"staff-dashboard.html": "Staff", "profile.html": None}
 DISABLED_PAGES = {"client-dashboard.html"}
 ACTIVE_ROLES = {"Admin", "Staff"}
-PUBLIC_FILES = {"index.html", "public.js", "public.css", "app.js", "app.css", "auth.css", "i18n.js", "assets/smart-power-logo.png"}
+PUBLIC_FILES = {"index.html", "public.js", "public.css", "app.js", "app.css", "auth.css", "i18n.js", "profile.js", "assets/smart-power-logo.png"}
 
 
 def connection() -> sqlite3.Connection:
@@ -40,6 +48,11 @@ def connection() -> sqlite3.Connection:
 
 
 def init_db() -> None:
+    DB.parent.mkdir(parents=True, exist_ok=True)
+    if DB != LEGACY_DB and not DB.exists() and LEGACY_DB.exists() and not os.environ.get("SMART_POWER_DB"):
+        # SQLite backup preserves the existing local users and records on upgrade.
+        with sqlite3.connect(LEGACY_DB) as source, sqlite3.connect(DB) as target:
+            source.backup(target)
     with connection() as db:
         db.executescript("""
             PRAGMA foreign_keys = ON;
@@ -48,6 +61,10 @@ def init_db() -> None:
               role TEXT NOT NULL CHECK(role IN ('Admin','Staff','Client')),
               password_hash TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
               created_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS profiles (
+              user_id INTEGER PRIMARY KEY, data TEXT NOT NULL, updated_at INTEGER NOT NULL,
+              FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             );
             CREATE TABLE IF NOT EXISTS records (
               id INTEGER PRIMARY KEY, kind TEXT NOT NULL, data TEXT NOT NULL,
@@ -104,6 +121,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self.setup_form()
         if parsed.path == "/auth/login":
             return self.login_form(parse_qs(parsed.query).get("next", [""])[0])
+        if parsed.path == "/api/profile":
+            return self.profile_api(parsed.query)
+        if parsed.path == "/api/support":
+            return self.support_api()
+        if parsed.path == "/api/admin/reports":
+            return self.report_download(parsed.query)
         if parsed.path.startswith("/api/admin/"):
             return self.admin_api(parsed.path)
         if parsed.path == "/api/me":
@@ -117,6 +140,10 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/api/profile":
+            return self.profile_api(parsed.query)
+        if parsed.path == "/api/support":
+            return self.support_api()
         if parsed.path.startswith("/api/admin/"):
             return self.admin_api(parsed.path)
         if parsed.path == "/api/consultations":
@@ -196,19 +223,19 @@ class Handler(SimpleHTTPRequestHandler):
             return self.setup_form("This email is already registered.")
         self.redirect("/auth/login")
 
-    def login_form(self, next_path="", error=""):
+    def login_form(self, next_path="", error="", position="Admin"):
         if not self.has_admin(): return self.redirect("/auth/setup")
         safe_next = next_path if next_path.startswith("/") and not next_path.startswith("//") else ""
         msg = f"<p class='error'>{esc(error)}</p>" if error else ""
         self.send_bytes(page("Secure sign in", f"""<div class='brand'>SMART POWER ENGINEERING WORKS</div><h1>Secure sign in</h1><p>Use your company account to enter the correct workspace.</p>{msg}
-<form method='post'><input type='hidden' name='next' value='{esc(safe_next)}'><label>Email<input type='email' name='email' required autocomplete='email'></label><label>Password<input type='password' name='password' required autocomplete='current-password'></label><button>Sign in securely</button></form><p class='note'><a href='/'>Back to company website</a></p>"""))
+<form method='post'><input type='hidden' name='next' value='{esc(safe_next)}'><label>Position<select name='position' required><option value='Admin' {'selected' if position == 'Admin' else ''}>Admin</option><option value='Staff' {'selected' if position == 'Staff' else ''}>Staffs</option></select></label><label>Email<input type='email' name='email' required autocomplete='email'></label><label>Password<input type='password' name='password' required autocomplete='current-password'></label><button>Sign in securely</button></form><p class='note'><a href='/'>Back to company website</a></p>"""))
 
     def login_submit(self):
         f = self.fields(); email, password = f.get("email", "").strip().lower(), f.get("password", "")
         with connection() as db:
             user = db.execute("SELECT * FROM users WHERE email=? AND active=1", (email,)).fetchone()
-        if not user or user["role"] not in ACTIVE_ROLES or not verify_password(password, user["password_hash"]):
-            return self.login_form(f.get("next", ""), "Incorrect email or password.")
+        if not user or f.get("position") != user["role"] or user["role"] not in ACTIVE_ROLES or not verify_password(password, user["password_hash"]):
+            return self.login_form(f.get("next", ""), "Incorrect position, email or password.", f.get("position", "Admin"))
         raw = secrets.token_urlsafe(32); csrf = secrets.token_urlsafe(24)
         with connection() as db:
             db.execute("DELETE FROM sessions WHERE expires_at<?", (int(time.time()),))
@@ -221,18 +248,21 @@ class Handler(SimpleHTTPRequestHandler):
         self.redirect(target, cookie)
 
     def logout(self):
-        s = self.session(); f = self.fields()
-        if s and self.csrf_ok(f, s):
-            cookie = SimpleCookie(self.headers.get("Cookie")); raw = cookie.get("sp_session")
-            if raw:
-                with connection() as db: db.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash(raw.value),))
+        account = self.session()
+        fields = self.fields()
+        if account and not self.csrf_ok(fields, account):
+            return self.json_response({"error": "Refresh and try again."}, 403)
+        cookie = SimpleCookie(self.headers.get("Cookie")); raw = cookie.get("sp_session")
+        if raw:
+            with connection() as db:
+                db.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash(raw.value),))
         self.redirect("/", "sp_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0")
 
     def api_me(self):
         s = self.require()
         if not s: return
         import json
-        self.send_bytes(json.dumps({"name": s["name"], "email": s["email"], "role": s["role"], "csrf": s["csrf_token"]}).encode(), "application/json; charset=utf-8")
+        self.send_bytes(json.dumps({"id": s["id"], "name": s["name"], "email": s["email"], "role": s["role"], "csrf": s["csrf_token"], "version": APP_VERSION}).encode(), "application/json; charset=utf-8")
 
     def user_management(self):
         s = self.require("Admin")
@@ -259,9 +289,9 @@ class Handler(SimpleHTTPRequestHandler):
     def json_response(self, value, status=200):
         self.send_bytes(json.dumps(value, ensure_ascii=False).encode(), "application/json; charset=utf-8", status)
 
-    def json_input(self):
+    def json_input(self, limit=65536):
         size = int(self.headers.get("Content-Length", "0"))
-        if size < 1 or size > 65536:
+        if size < 1 or size > limit:
             raise ValueError("Request size is invalid.")
         value = json.loads(self.rfile.read(size).decode())
         if not isinstance(value, dict):
@@ -299,6 +329,7 @@ class Handler(SimpleHTTPRequestHandler):
             "attendance": {"name": "required", "date": "date", "site": "text", "hours": "hours", "status": ["Present", "Absent", "Leave"]},
             "notifications": {"name": "required", "details": "text", "status": ["Unread", "Read"]},
             "consultations": {"name": "required", "phone": "required", "type": "required", "message": "required", "status": ["New", "Contacted", "Closed"]},
+            "support": {"name": "required", "requester": "required", "email": "email", "message": "required", "status": ["Open", "In progress", "Resolved"], "response": "text"},
             "settings": {"name": "required", "address": "text", "phone": "required", "email": "text"}
         }
         if kind == "users":
@@ -395,6 +426,145 @@ class Handler(SimpleHTTPRequestHandler):
         except (ValueError, TypeError, sqlite3.IntegrityError):
             self.json_response({"error": "Check name, unique email, role and password (12+ characters). Your own Admin account must stay active."}, 400)
 
+    def report_download(self, query):
+        account = self.require("Admin")
+        if not account:
+            return
+        params = parse_qs(query)
+        kind = params.get("kind", [""])[0]
+        columns = {
+            "projects": ["name", "code", "client", "location", "type", "status", "start", "end", "budget", "progress", "manager", "notes"],
+            "team": ["name", "email", "phone", "role", "site", "salary", "status"],
+            "attendance": ["name", "date", "site", "hours", "status"],
+            "materials": ["name", "quantity", "unit", "location", "supplier", "minimum", "status"],
+            "invoices": ["name", "client", "project", "amount", "due", "status", "notes"],
+            "clients": ["name", "email", "phone", "address", "project", "notes"],
+            "consultations": ["name", "phone", "type", "message", "status"]
+        }
+        if kind not in columns:
+            return self.json_response({"error": "Choose a report."}, 400)
+        try:
+            start, end = params.get("from", [""])[0], params.get("to", [""])[0]
+            for value in (start, end):
+                if value:
+                    datetime.date.fromisoformat(value)
+            if start and end and start > end:
+                raise ValueError()
+        except ValueError:
+            return self.json_response({"error": "Enter a valid date range."}, 400)
+        with connection() as db:
+            rows = db.execute("SELECT id,data,created_at FROM records WHERE kind=? ORDER BY id DESC", (kind,)).fetchall()
+        output = io.StringIO(newline="")
+        writer = csv.writer(output)
+        writer.writerow(["id"] + columns[kind] + ["created_at"])
+        for row in rows:
+            date = datetime.datetime.fromtimestamp(row["created_at"], datetime.timezone(datetime.timedelta(hours=5, minutes=30))).date().isoformat()
+            if (start and date < start) or (end and date > end):
+                continue
+            data = json.loads(row["data"])
+            def safe(value):
+                text = str(value if value is not None else "")
+                return "'" + text if text.lstrip().startswith(("=", "+", "-", "@")) or text.startswith(("\t", "\r", "\n")) else text
+            writer.writerow([row["id"]] + [safe(data.get(key, "")) for key in columns[kind]] + [date])
+        body = ("\ufeff" + output.getvalue()).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="smart-power-{kind}.csv"')
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def profile_api(self, query):
+        account = self.require()
+        if not account:
+            return
+        try:
+            user_id = int(parse_qs(query).get("user", [account["id"]])[0])
+        except (ValueError, TypeError):
+            return self.json_response({"error": "Invalid account."}, 400)
+        if user_id != account["id"] and account["role"] != "Admin":
+            return self.json_response({"error": "You can access only your own profile."}, 403)
+        with connection() as db:
+            user = db.execute("SELECT id,name,email,role FROM users WHERE id=? AND role IN ('Admin','Staff')", (user_id,)).fetchone()
+            saved = db.execute("SELECT data FROM profiles WHERE user_id=?", (user_id,)).fetchone()
+        if not user:
+            return self.json_response({"error": "Account not found."}, 404)
+        existing = json.loads(saved["data"]) if saved else {}
+        if self.command in {"GET", "HEAD"}:
+            return self.json_response(dict(existing, **dict(user)))
+        try:
+            payload = self.json_input(1500000)
+            if not self.csrf_ok(payload, account):
+                return self.json_response({"error": "Refresh and try again."}, 403)
+            data = payload.get("data")
+            if not isinstance(data, dict):
+                raise ValueError("Invalid profile.")
+            allowed = {"name", "email", "phone", "nic", "dob", "address", "employee_id", "department", "job_title", "employment_type", "joined", "emergency_name", "emergency_phone", "blood_group", "qualifications", "bank_name", "bank_account", "photo", "signature"}
+            if set(data) - allowed:
+                raise ValueError("Unsupported profile fields.")
+            profile = dict(existing)
+            for key, value in data.items():
+                if not isinstance(value, str):
+                    raise ValueError("Invalid profile details.")
+                value = value.strip()
+                if key in {"photo", "signature"}:
+                    if value:
+                        match = re.fullmatch(r"data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)", value)
+                        if not match:
+                            raise ValueError("Upload a PNG, JPEG or WebP image.")
+                        binary = base64.b64decode(match[2], validate=True)
+                        valid = {"png": binary.startswith(b"\x89PNG\r\n\x1a\n"), "jpeg": binary.startswith(b"\xff\xd8\xff"), "webp": binary.startswith(b"RIFF") and binary[8:12] == b"WEBP"}
+                        if not valid[match[1]] or len(binary) > 512000:
+                            raise ValueError("Each image must be valid and smaller than 500 KB.")
+                else:
+                    if len(value) > (2000 if key in {"address", "qualifications"} else 200):
+                        raise ValueError("Profile field is too long.")
+                    if key in {"dob", "joined"} and value:
+                        date = datetime.date.fromisoformat(value)
+                        if key == "dob" and date > datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).date():
+                            raise ValueError("Date of birth cannot be in the future.")
+                    if key in {"phone", "emergency_phone"} and value and not re.fullmatch(r"[+0-9 ()-]{7,30}", value):
+                        raise ValueError("Enter a valid phone number.")
+                profile[key] = value
+            name = profile.pop("name", user["name"]).strip()
+            email = profile.pop("email", user["email"]).strip().lower()
+            if len(name) < 2 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+                raise ValueError("Enter a valid name and email.")
+            with connection() as db:
+                db.execute("UPDATE users SET name=?,email=? WHERE id=?", (name,email,user_id))
+                db.execute("INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at", (user_id,json.dumps(profile,ensure_ascii=False),int(time.time())))
+            return self.json_response({"ok": True})
+        except sqlite3.IntegrityError:
+            return self.json_response({"error": "This email is already used by another account."}, 409)
+        except (ValueError, TypeError, binascii.Error) as error:
+            return self.json_response({"error": str(error) or "Check profile details."}, 400)
+
+    def support_api(self):
+        account = self.require()
+        if not account:
+            return
+        if self.command in {"GET", "HEAD"}:
+            with connection() as db:
+                row = db.execute("SELECT data FROM records WHERE kind='settings' ORDER BY id DESC LIMIT 1").fetchone()
+                requests = db.execute("SELECT id,data,created_at FROM records WHERE kind='support' AND created_by=? ORDER BY id DESC", (account["id"],)).fetchall()
+            company = json.loads(row["data"]) if row else {}
+            return self.json_response({"phone": company.get("phone") or "0773587109", "email": company.get("email", ""), "requests": [dict(json.loads(r["data"]),id=r["id"],created_at=r["created_at"]) for r in requests]})
+        try:
+            payload = self.json_input()
+            if not self.csrf_ok(payload, account):
+                return self.json_response({"error": "Refresh and try again."}, 403)
+            subject, message = str(payload.get("subject", "")).strip(), str(payload.get("message", "")).strip()
+            if not 2 <= len(subject) <= 200 or not 5 <= len(message) <= 2000:
+                raise ValueError()
+            with connection() as db:
+                rid = self.add_record(db,"support",{"name":subject,"message":message,"requester":account["name"],"email":account["email"],"status":"Open","response":""},account["id"])
+                self.add_record(db,"notifications",{"name":"Office support request","details":account["name"]+": "+subject,"status":"Unread"},account["id"])
+            return self.json_response({"ok":True,"id":rid},201)
+        except (ValueError, TypeError):
+            return self.json_response({"error":"Enter a subject and a message (5–2000 characters)."},400)
+
     def serve_static(self, raw_path: str):
         # Resolve decoded paths before checking permissions so alternate URL spellings
         # cannot bypass role guards. Serve only explicitly listed web assets.
@@ -423,5 +593,6 @@ class Handler(SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     init_db()
     print(f"Smart Power secure server running at http://{HOST}:{PORT}")
+    print(f"Permanent database: {DB}")
     print("First run: create an Admin at http://127.0.0.1:8000/auth/setup")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

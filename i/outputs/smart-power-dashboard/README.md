@@ -45,4 +45,28 @@ For deployment, run behind HTTPS and add `Secure` to the session cookie. Configu
 - Start the existing server normally. New tables are created automatically without deleting existing accounts. Restart the server after updating files.
 - Staff workspace business panels remain illustrative; this update does not connect personal attendance/payroll data to Staff login accounts.
 
-Validation: 26 access checks, 66 workflow requests against a temporary database, and JavaScript syntax checks. Browser rendering could not be verified in the restricted execution environment.
+Earlier validation: 26 access checks, 66 workflow requests against a temporary database, and JavaScript syntax checks. The profile/reports update below also passed real Chromium browser checks.
+
+
+## Login, profiles, reports and support
+
+- Company Administration opens `/auth/login?next=%2Fadmin.html`. Choose Position **Admin** or **Staffs**; the position must match the stored account role. Choosing Admin never upgrades a Staff account.
+- My profile is available to both roles. It saves name/login email, phone, NIC, DOB, address, blood group, employee ID, department, job title, employment type, joining date, qualifications, emergency contact, and bank details. Photo/signature uploads accept PNG, JPEG or WebP up to 500 KB each. Signatures can also be drawn; the stored image is not a cryptographic signature.
+- Staff can read/edit only their own profile. Admin can open another account's profile from User administration → Profile. Role and account activation remain Admin controls.
+- Office support provides the configured office phone/email and a request inbox. Requests persist in SQLite, create Admin notifications, and can receive an office reply/status. Staff see only their own requests. No email or SMS is sent automatically.
+- Reports now download CSV directly from the server with an attachment filename, UTF-8 BOM and Excel-safe cells. Empty exports contain the column headers. Optional dates refer to record creation in Sri Lanka time.
+- Log out is visible on desktop and mobile and deletes the server-side session.
+
+### Keep saved records when updating
+
+On Windows, the default database is now `%LOCALAPPDATA%\SmartPowerEngineering\smart_power.db`, outside ZIP extraction folders. On the first upgrade, the existing `smart_power.db` in this project folder is copied using SQLite backup if the permanent database does not exist yet. **Update and run your existing project folder first** to import your existing accounts and Team records. Subsequent upgrades reuse the permanent database. Startup prints its actual path.
+
+Other platforms keep the original project-folder database by default. Set `SMART_POWER_DB` to an absolute persistent database path when deploying or choosing a separate data directory. Back up the database before moving it. Profile identity/bank information is accessible only through authenticated endpoints; the database is never served as a static file.
+
+Restart `python server.py` after installing the new code. Profiles and support tables are added automatically without resetting existing tables.
+
+### Regression checks
+
+From this folder, run `python -m unittest discover -s tests` (standard library only). Seven regression tests cover position matching, Team persistence, CSV downloads, profile access/validation, support replies, logout and legacy-database migration. Tests use a temporary database.
+
+For a real browser check, install Playwright and Chromium, then run `python tests/check_browser.py`. This checks Admin/Staff sign-in, Team persistence after refresh/server restart and Tamil edits, CSV/date downloads, profile photo/drawn signature persistence, support/replies, logout and mobile Staff controls. It uses a temporary database and localhost server. Both checks passed during this update.
