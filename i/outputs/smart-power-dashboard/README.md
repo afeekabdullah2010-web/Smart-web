@@ -23,3 +23,11 @@ The application saves users, hashed passwords, CSRF tokens, and server-side sess
 Client portal login is currently disabled and can be added later when required.
 
 For deployment, run behind HTTPS and add `Secure` to the session cookie. Configure backups and a production database before publishing.
+
+## Access policy
+
+- Admin can open every enabled workspace and create Admin/Staff accounts.
+- Staff can open only the Staff workspace and their own signed-in identity; company management pages are forbidden.
+- Client login and Client sessions are disabled, including existing Client accounts. Client records remain available to Admin.
+- Only listed website assets are served; the database, Python source and other internal files cannot be downloaded through this server. GET and HEAD use the same access checks.
+- Staff attendance, salary and task panels currently contain sample data, not personal records. Per-user storage and editing still need implementation before operational use.
