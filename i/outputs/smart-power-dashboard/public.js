@@ -15,7 +15,7 @@ function reveal(){
  if(reduced.matches){document.querySelectorAll('.will-reveal').forEach(el=>el.classList.add('is-visible'));return}
  if(!('IntersectionObserver'in window))return;
  observer=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting){entry.target.classList.add('is-visible');observer.unobserve(entry.target)}}),{threshold:0.08});
- document.querySelectorAll('main>section,.destination-card,.service-list article,.project,.about aside').forEach((el,index)=>{el.classList.add('will-reveal');el.style.setProperty('--reveal-delay',(index%3)*70+'ms');observer.observe(el)});
+ document.querySelectorAll('main>section,.destination-card,.service-list article,.project,.about aside,.engineering-card,.approach-steps article,.welcome-art').forEach((el,index)=>{el.classList.add('will-reveal');el.style.setProperty('--reveal-delay',(index%3)*70+'ms');observer.observe(el)});
 }
 reveal();reduced.addEventListener('change',()=>{if(reduced.matches){observer?.disconnect();document.querySelectorAll('.will-reveal').forEach(el=>el.classList.add('is-visible'))}});
 let leaving=false;
@@ -26,5 +26,10 @@ document.addEventListener('click',event=>{
  if(!['/index.html','/about.html','/services.html','/our-projects.html','/contact.html'].includes(url.pathname))return;
  closeMenu();if(reduced.matches)return;event.preventDefault();if(leaving)return;leaving=true;document.body.classList.add('page-leaving');window.setTimeout(()=>location.assign(url.href),150);
 });
+const slides=Array.from(document.querySelectorAll('[data-project-slide]'));
+if(slides.length){let current=0;const region=document.querySelector('.home-projects');function showSlide(index){current=(index+slides.length)%slides.length;slides.forEach((slide,i)=>{slide.hidden=i!==current;slide.classList.toggle('is-active',i===current)});document.querySelector('[data-project-count]').textContent=(current+1)+' / '+slides.length;}
+ document.querySelector('[data-project-next]').onclick=()=>showSlide(current+1);document.querySelector('[data-project-prev]').onclick=()=>showSlide(current-1);
+ region.addEventListener('keydown',event=>{if(event.key==='ArrowRight'||event.key==='ArrowLeft'){event.preventDefault();showSlide(current+(event.key==='ArrowRight'?1:-1))}});
+}
 window.addEventListener('pageshow',()=>{leaving=false;document.body.classList.remove('page-leaving')});
 })();

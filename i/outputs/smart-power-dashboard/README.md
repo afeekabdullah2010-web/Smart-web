@@ -105,3 +105,11 @@ Company Administration was removed from the header and remains in the footer. Th
 Page entry/exit, scroll reveals, card hover and subtle construction-art motion work across the public pages. Reduced-motion preferences disable animation and smooth scrolling. The keyboard skip link focuses main content; mobile navigation supports Escape, and sticky-header offsets adapt to the actual header height. Content remains visible without animation support.
 
 Validated with `python tests/check_public_browser.py`: five page routes, enlarged header and footer cleanup, active navigation, scroll reveals, navigation transitions, keyboard skip, Tamil/Sinhala/English persistence, contact submission storage, mobile layout/menu and reduced motion. The 13 server regression tests also pass.
+
+## Blue corporate home refresh
+
+The Home page now follows the reference's broad corporate engineering structure using Smart Power's blue palette, original copy and original vector artwork: full-width engineering banner, four service shortcuts, company introduction, engineering service cards, delivery approach, manual project showcase and contact CTA. There are no third-party image/video dependencies or imported claims about awards, age or project scale.
+
+The project showcase has previous/next buttons, arrow-key navigation, a live position counter and reduced-motion support. Three-language copy is retained. Other public pages remain separate. Company Administration appears in the footer only, and the removed footer navigation has not been restored.
+
+The public browser regression includes home headline/slider checks alongside desktop/mobile navigation, footer-only login, languages, scroll reveals, contact persistence and reduced-motion tests. Desktop/mobile preview captures were also visually reviewed during development.
