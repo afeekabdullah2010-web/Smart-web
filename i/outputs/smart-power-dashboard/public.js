@@ -1,13 +1,7 @@
 (function(){
-  var memory={}; function put(k,v){memory[k]=v;try{localStorage.setItem(k,v)}catch(e){}};
-  function close(){document.querySelectorAll('dialog[open]').forEach(function(d){d.close()})}
-  document.querySelector('.menu').addEventListener('click',function(){var h=document.querySelector('.site-header');h.classList.toggle('open');this.setAttribute('aria-expanded',h.classList.contains('open'))});
-  document.querySelectorAll('nav a').forEach(function(a){a.addEventListener('click',function(){document.querySelector('.site-header').classList.remove('open')})});
-  document.querySelectorAll('[data-open-portal]').forEach(function(b){b.onclick=function(){document.getElementById('portalModal').showModal()}});
-  document.querySelectorAll('[data-open-warning]').forEach(function(b){b.onclick=function(){document.getElementById('warningModal').showModal()}});
-  document.querySelectorAll('[data-close-modal]').forEach(function(b){b.onclick=close});
-  document.querySelector('[data-show-password]').onclick=function(){close();document.getElementById('passwordModal').showModal();setTimeout(function(){document.getElementById('adminPassword').focus()},50)};
-  document.querySelectorAll('[data-portal]').forEach(function(b){b.onclick=function(){location.href='/auth/login?next=%2Fstaff-dashboard.html'}});
-  document.getElementById('adminForm').onsubmit=function(e){e.preventDefault();location.href='/auth/login?next=%2Fadmin.html'};
-  document.getElementById('consultationForm').onsubmit=function(e){e.preventDefault();var n=this.querySelector('.form-note');if(!this.checkValidity()){n.textContent='Please complete your name, phone number and project details.';return}n.textContent='Thank you — your consultation request is recorded in this local demo. Our office will contact you by phone.';this.reset()};
-}());
+ const menu=document.querySelector('.menu');menu.addEventListener('click',function(){const h=document.querySelector('.site-header');h.classList.toggle('open');this.setAttribute('aria-expanded',h.classList.contains('open'))});
+ document.querySelectorAll('nav a').forEach(a=>a.addEventListener('click',()=>{document.querySelector('.site-header').classList.remove('open');menu.setAttribute('aria-expanded','false')}));
+ document.getElementById('consultationForm').onsubmit=async function(e){e.preventDefault();if(!this.reportValidity())return;const note=this.querySelector('.form-note'),button=this.querySelector('[type=submit]'),t=text=>window.spTranslate?window.spTranslate(text):text;button.disabled=true;note.textContent=t('Sending…');
+ try{const response=await fetch('/api/consultations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(this)))});if(!response.ok)throw Error();note.textContent=t('Thank you. Your request has been sent to our office.');this.reset()}catch(err){note.textContent=t('Unable to send. Please try again.')}finally{button.disabled=false}
+ };
+})();

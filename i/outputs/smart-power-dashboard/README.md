@@ -31,3 +31,18 @@ For deployment, run behind HTTPS and add `Secure` to the session cookie. Configu
 - Client login and Client sessions are disabled, including existing Client accounts. Client records remain available to Admin.
 - Only listed website assets are served; the database, Python source and other internal files cannot be downloaded through this server. GET and HEAD use the same access checks.
 - Staff attendance, salary and task panels currently contain sample data, not personal records. Per-user storage and editing still need implementation before operational use.
+
+## Company Administration update
+
+- Header/footer Company Administration links share `/auth/login`; login routes Admin and Staff by their account role. The old Hidden entry and warning/password overlays are removed.
+- The public site, login, and common administration controls support English, Tamil and Sinhala. The language selector remembers the browser choice. Company names, user-entered records, and some operational/error messages retain their source text.
+- Admin pages now use persisted SQLite records instead of illustrative totals. Projects include code, client, site, type, status, start/end dates, budget, progress, manager and notes.
+- Staff directory, attendance, material requisitions, invoices, clients, reminders and consultation requests support create, edit and delete. Invoice statuses track payment; there is no online payment processor.
+- Notifications show saved changes and new consultation requests. They are an internal inbox, not email/SMS delivery.
+- Settings support company details and user accounts (create, edit, reset password and deactivate); Admin cannot deactivate or demote their own account. Directory records do not create login accounts automatically.
+- Reports export actual records to CSV, optionally filtered by creation date. No sample PDF/XLSX downloads are advertised.
+- Consultation requests from the public website are saved for Admin follow-up; the form reports failures accurately.
+- Start the existing server normally. New tables are created automatically without deleting existing accounts. Restart the server after updating files.
+- Staff workspace business panels remain illustrative; this update does not connect personal attendance/payroll data to Staff login accounts.
+
+Validation: 26 access checks, 66 workflow requests against a temporary database, and JavaScript syntax checks. Browser rendering could not be verified in the restricted execution environment.

@@ -10,6 +10,8 @@ import hashlib
 import hmac
 import html
 import os
+import json
+import re
 import secrets
 import sqlite3
 import time
@@ -28,7 +30,7 @@ ADMIN_PAGES = {"admin.html", "projects.html", "team.html", "materials.html", "fi
 ROLE_PAGES = {"staff-dashboard.html": "Staff"}
 DISABLED_PAGES = {"client-dashboard.html"}
 ACTIVE_ROLES = {"Admin", "Staff"}
-PUBLIC_FILES = {"index.html", "public.js", "public.css", "app.js", "app.css", "auth.css", "assets/smart-power-logo.png"}
+PUBLIC_FILES = {"index.html", "public.js", "public.css", "app.js", "app.css", "auth.css", "i18n.js", "assets/smart-power-logo.png"}
 
 
 def connection() -> sqlite3.Connection:
@@ -46,6 +48,10 @@ def init_db() -> None:
               role TEXT NOT NULL CHECK(role IN ('Admin','Staff','Client')),
               password_hash TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
               created_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS records (
+              id INTEGER PRIMARY KEY, kind TEXT NOT NULL, data TEXT NOT NULL,
+              created_by INTEGER, created_at INTEGER NOT NULL
             );
             CREATE TABLE IF NOT EXISTS sessions (
               token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL,
@@ -82,8 +88,8 @@ def esc(value: str) -> str:
 
 def page(title: str, body: str) -> bytes:
     return f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>{esc(title)} | Smart Power Engineering Works</title><link rel='stylesheet' href='/auth.css'>
-<style>body{{background:#061d35;color:#15243a;min-height:100vh;display:grid;place-items:center;margin:0;font-family:Segoe UI,Arial,sans-serif}}.card{{width:min(460px,calc(100% - 36px));box-sizing:border-box;background:white;padding:34px;border-radius:18px;box-shadow:0 22px 60px #0006}}h1{{font-size:28px;margin:0 0 8px}}p{{color:#58677b;line-height:1.5}}label{{display:block;font-weight:700;margin:16px 0 6px}}input,select{{width:100%;box-sizing:border-box;border:1px solid #bed0df;border-radius:9px;padding:12px;font:inherit}}button{{margin-top:22px;width:100%;border:0;border-radius:9px;padding:13px;background:#078ee8;color:#fff;font-weight:800;font:inherit;cursor:pointer}}.brand{{color:#078ee8;font-weight:900;letter-spacing:.08em;font-size:13px}}.error{{background:#fff0f0;color:#9b2020;padding:10px;border-radius:8px}}.note{{font-size:13px}}a{{color:#087ac7}}</style></head><body><main class='card'>{body}</main></body></html>""".encode()
+<title>{esc(title)} | Smart Power Engineering Works</title><script defer src='/i18n.js'></script><link rel='stylesheet' href='/auth.css'>
+<style>body{{background:#061d35;color:#15243a;min-height:100vh;display:grid;place-items:center;margin:0;font-family:Segoe UI,Arial,sans-serif}}.card{{width:min(460px,calc(100% - 36px));box-sizing:border-box;background:white;padding:34px;border-radius:18px;box-shadow:0 22px 60px #0006}}h1{{font-size:28px;margin:0 0 8px}}p{{color:#58677b;line-height:1.5}}label{{display:block;font-weight:700;margin:16px 0 6px}}input,select{{width:100%;box-sizing:border-box;border:1px solid #bed0df;border-radius:9px;padding:12px;font:inherit}}button{{margin-top:22px;width:100%;border:0;border-radius:9px;padding:13px;background:#078ee8;color:#fff;font-weight:800;font:inherit;cursor:pointer}}.language-select{{margin-top:12px;padding:8px;width:auto;max-width:100%}}.brand{{color:#078ee8;font-weight:900;letter-spacing:.08em;font-size:13px}}.error{{background:#fff0f0;color:#9b2020;padding:10px;border-radius:8px}}.note{{font-size:13px}}a{{color:#087ac7}}</style></head><body><main class='card'>{body}</main></body></html>""".encode()
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -98,6 +104,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.setup_form()
         if parsed.path == "/auth/login":
             return self.login_form(parse_qs(parsed.query).get("next", [""])[0])
+        if parsed.path.startswith("/api/admin/"):
+            return self.admin_api(parsed.path)
         if parsed.path == "/api/me":
             return self.api_me()
         if parsed.path == "/admin/users":
@@ -109,6 +117,10 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/admin/"):
+            return self.admin_api(parsed.path)
+        if parsed.path == "/api/consultations":
+            return self.consultation_submit()
         if parsed.path == "/auth/setup":
             return self.setup_submit()
         if parsed.path == "/auth/login":
@@ -243,6 +255,145 @@ class Handler(SimpleHTTPRequestHandler):
         except sqlite3.IntegrityError:
             self.send_error(HTTPStatus.CONFLICT, "This email already has an account."); return
         self.redirect("/admin/users")
+
+    def json_response(self, value, status=200):
+        self.send_bytes(json.dumps(value, ensure_ascii=False).encode(), "application/json; charset=utf-8", status)
+
+    def json_input(self):
+        size = int(self.headers.get("Content-Length", "0"))
+        if size < 1 or size > 65536:
+            raise ValueError("Request size is invalid.")
+        value = json.loads(self.rfile.read(size).decode())
+        if not isinstance(value, dict):
+            raise ValueError("Expected an object.")
+        return value
+
+    def add_record(self, db, kind, data, owner):
+        return db.execute("INSERT INTO records(kind,data,created_by,created_at) VALUES(?,?,?,?)",
+                          (kind, json.dumps(data, ensure_ascii=False), owner, int(time.time()))).lastrowid
+
+    def consultation_submit(self):
+        try:
+            data = self.json_input()
+            cleaned = {k: str(data.get(k, "")).strip()[:2000] for k in ("name", "phone", "type", "message")}
+            if not all(cleaned.values()) or len(cleaned["phone"]) < 7:
+                raise ValueError("Complete your name, phone number and project details.")
+            with connection() as db:
+                self.add_record(db, "consultations", cleaned, None)
+                self.add_record(db, "notifications", {"name": "New consultation request", "details": cleaned["name"], "status": "Unread"}, None)
+            self.json_response({"ok": True}, 201)
+        except (ValueError, UnicodeError):
+            self.json_response({"error": "Complete valid consultation details."}, 400)
+
+    def admin_api(self, path):
+        account = self.require("Admin")
+        if not account:
+            return
+        kind = path.removeprefix("/api/admin/")
+        schemas = {
+            "projects": {"name": "required", "code": "required", "client": "required", "location": "required", "type": ["Residential", "Commercial", "Engineering", "Renovation"], "status": ["Planned", "In progress", "On hold", "Completed"], "start": "date", "end": "date", "budget": "number", "progress": "percent", "manager": "text", "notes": "text"},
+            "team": {"name": "required", "email": "email", "phone": "required", "role": "required", "site": "text", "salary": "number", "status": ["Active", "On leave", "Inactive"]},
+            "materials": {"name": "required", "quantity": "number", "unit": "required", "location": "required", "supplier": "text", "minimum": "number", "status": ["Requested", "Ordered", "Received"]},
+            "invoices": {"name": "required", "client": "required", "project": "text", "amount": "number", "due": "date", "status": ["Draft", "Pending", "Paid", "Overdue"], "notes": "text"},
+            "clients": {"name": "required", "email": "email", "phone": "required", "address": "text", "project": "text", "notes": "text"},
+            "attendance": {"name": "required", "date": "date", "site": "text", "hours": "hours", "status": ["Present", "Absent", "Leave"]},
+            "notifications": {"name": "required", "details": "text", "status": ["Unread", "Read"]},
+            "consultations": {"name": "required", "phone": "required", "type": "required", "message": "required", "status": ["New", "Contacted", "Closed"]},
+            "settings": {"name": "required", "address": "text", "phone": "required", "email": "text"}
+        }
+        if kind == "users":
+            return self.users_api(account)
+        if kind not in schemas:
+            return self.json_response({"error": "Unknown workspace."}, 404)
+        if self.command in {"GET", "HEAD"}:
+            with connection() as db:
+                rows = db.execute("SELECT * FROM records WHERE kind=? ORDER BY id DESC", (kind,)).fetchall()
+            return self.json_response([dict(json.loads(row["data"]), id=row["id"], created_at=row["created_at"]) for row in rows])
+        try:
+            payload = self.json_input()
+            if not self.csrf_ok(payload, account):
+                return self.json_response({"error": "Refresh and try again."}, 403)
+            record_id = payload.get("id")
+            action = payload.get("action", "save")
+            with connection() as db:
+                if record_id and not db.execute("SELECT 1 FROM records WHERE id=? AND kind=?", (record_id, kind)).fetchone():
+                    return self.json_response({"error": "Record not found."}, 404)
+                if action == "delete":
+                    if not record_id:
+                        raise ValueError("Select a record.")
+                    db.execute("DELETE FROM records WHERE id=? AND kind=?", (record_id, kind))
+                elif action == "save":
+                    source = payload.get("data", {})
+                    if not isinstance(source, dict):
+                        raise ValueError("Invalid record.")
+                    data = {}
+                    for key, rule in schemas[kind].items():
+                        val = str(source.get(key, "")).strip()
+                        if len(val) > 2000:
+                            raise ValueError(key + " is too long.")
+                        if rule == "required" and not val:
+                            raise ValueError(key + " is required.")
+                        if isinstance(rule, list) and val not in rule:
+                            raise ValueError("Choose a valid " + key + ".")
+                        if rule in ("number", "percent", "hours"):
+                            num = float(val)
+                            if not 0 <= num <= (100 if rule == "percent" else 24 if rule == "hours" else 1e12):
+                                raise ValueError("Enter a valid " + key + ".")
+                            data[key] = num
+                            continue
+                        if rule == "date":
+                            import datetime
+                            datetime.date.fromisoformat(val)
+                        if rule == "email" and val and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", val):
+                            raise ValueError("Enter a valid email.")
+                        data[key] = val
+                    if kind == "projects" and data["end"] < data["start"]:
+                        raise ValueError("End date must be on or after start date.")
+                    if record_id:
+                        db.execute("UPDATE records SET data=? WHERE id=? AND kind=?", (json.dumps(data, ensure_ascii=False), record_id, kind))
+                    else:
+                        if kind == "settings":
+                            db.execute("DELETE FROM records WHERE kind='settings'")
+                        record_id = self.add_record(db, kind, data, account["id"])
+                    if kind != "notifications":
+                        self.add_record(db, "notifications", {"name": kind.title() + " saved", "details": data.get("name", ""), "status": "Unread"}, account["id"])
+                else:
+                    raise ValueError("Unknown action.")
+            self.json_response({"ok": True, "id": record_id})
+        except (ValueError, TypeError, UnicodeError):
+            self.json_response({"error": "Check required fields, dates and non-negative amounts; project end must follow start."}, 400)
+
+    def users_api(self, account):
+        if self.command in {"GET", "HEAD"}:
+            with connection() as db:
+                rows = db.execute("SELECT id,name,email,role,active FROM users ORDER BY name").fetchall()
+            return self.json_response([dict(row) for row in rows])
+        try:
+            payload = self.json_input()
+            if not self.csrf_ok(payload, account):
+                return self.json_response({"error": "Refresh and try again."}, 403)
+            uid = int(payload.get("id", 0))
+            data = payload.get("data", {})
+            name, email, role = str(data.get("name", "")).strip(), str(data.get("email", "")).strip().lower(), data.get("role")
+            active = 1 if data.get("active") == "Active" else 0
+            password = data.get("password", "")
+            if len(name) < 2 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) or role not in ACTIVE_ROLES or ((not uid or password) and len(password) < 12):
+                raise ValueError("Valid name, email, role and 12-character password required.")
+            with connection() as db:
+                if uid:
+                    if not db.execute("SELECT 1 FROM users WHERE id=?", (uid,)).fetchone():
+                        return self.json_response({"error": "Account not found."}, 404)
+                    if uid == account["id"] and (role != "Admin" or not active):
+                        raise ValueError("You cannot disable or demote your own account.")
+                    db.execute("UPDATE users SET name=?,email=?,role=?,active=? WHERE id=?", (name,email,role,active,uid))
+                    if password:
+                        db.execute("UPDATE users SET password_hash=? WHERE id=?", (hash_password(password),uid))
+                    db.execute("DELETE FROM sessions WHERE user_id=? AND user_id!=?", (uid,account["id"]))
+                else:
+                    uid = db.execute("INSERT INTO users(name,email,role,password_hash,active,created_at) VALUES(?,?,?,?,?,?)", (name,email,role,hash_password(password),active,int(time.time()))).lastrowid
+            self.json_response({"ok": True, "id": uid})
+        except (ValueError, TypeError, sqlite3.IntegrityError):
+            self.json_response({"error": "Check name, unique email, role and password (12+ characters). Your own Admin account must stay active."}, 400)
 
     def serve_static(self, raw_path: str):
         # Resolve decoded paths before checking permissions so alternate URL spellings
