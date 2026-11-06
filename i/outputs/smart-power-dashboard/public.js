@@ -14,7 +14,19 @@ if('ResizeObserver'in window)new ResizeObserver(measureHeader).observe(header);m
 const form=document.getElementById('consultationForm');
 if(form){const params=new URLSearchParams(location.search);if(params.get('interest')==='careers'){form.elements.type.value='Career enquiry';form.elements.type.parentElement.firstChild.textContent='Enquiry type';form.elements.message.placeholder='Your area of interest, qualifications, experience and availability';}const services={"construction": "Full Construction", "renewable-energy": "Solar & Wind Power", "security": "Security & Communication", "electrical": "Electrical Systems", "fire-safety": "Fire Safety Solutions", "air-conditioning": "Air Conditioning & Ventilation", "plumbing": "Plumbing & Gas", "facilities": "Facilities Management", "backup-power": "UPS & Battery Backups", "hydro": "Hydro Solutions", "architecture": "Architectural Drawings & 3D Visualisation", "industrial-accessories": "Industrial Accessories Trading"};if(services[params.get('service')]){const option=document.createElement('option');option.value=services[params.get('service')];option.textContent=option.value;form.elements.type.append(option);form.elements.type.value=option.value}}
 
-if(form)form.onsubmit=async function(event){event.preventDefault();if(!this.reportValidity())return;const note=this.querySelector('.form-note'),button=this.querySelector('[type=submit]'),t=text=>window.spTranslate?window.spTranslate(text):text;button.disabled=true;note.textContent=t('Sending…');try{const values=Object.fromEntries(new FormData(this)),netlify=window.SMART_POWER_HOSTING?.formMode==='netlify';const response=await fetch(netlify?'/contact.html':'/api/consultations',{method:'POST',headers:{'Content-Type':netlify?'application/x-www-form-urlencoded':'application/json'},body:netlify?new URLSearchParams({...values,'form-name':'smart-power-enquiries'}).toString():JSON.stringify(values)});if(!response.ok)throw Error();note.textContent=t('Thank you. Your request has been sent to our office.');this.reset()}catch(error){note.textContent=t('Unable to send. Please try again.')}finally{button.disabled=false}};
+if(form)form.onsubmit=async function(event){
+ event.preventDefault();if(!this.reportValidity())return;
+ const note=this.querySelector('.form-note'),button=this.querySelector('[type=submit]'),t=text=>window.spTranslate?window.spTranslate(text):text;
+ const values=Object.fromEntries(new FormData(this)),phone=String(values.phone||'').trim(),digits=phone.replace(/\D/g,'');
+ if(!/^[+0-9 ()-]{7,30}$/.test(phone)||digits.length<7||digits.length>15){note.textContent=t('Enter a valid phone number with 7–15 digits.');this.elements.phone.focus();return}
+ values.phone=phone;button.disabled=true;note.textContent=t('Sending…');
+ try{
+  const netlify=window.SMART_POWER_HOSTING?.formMode==='netlify';
+  const response=await fetch(netlify?'/contact.html':'/api/consultations',{method:'POST',headers:{'Content-Type':netlify?'application/x-www-form-urlencoded':'application/json'},body:netlify?new URLSearchParams({...values,'form-name':'smart-power-enquiries'}).toString():JSON.stringify(values)});
+  if(!response.ok){let result;try{result=await response.json()}catch{}note.textContent=t(result?.error||'Unable to send. Please try again.');return}
+  note.textContent=t('Thank you. Your request has been sent to our office.');this.reset();
+ }catch(error){note.textContent=t('Unable to send. Please check your connection and try again.')}finally{button.disabled=false}
+};
 // Content remains visible when JavaScript or animation support is unavailable.
 let observer;
 function reveal(){

@@ -19,7 +19,7 @@ def build(destination=DESTINATION):
     destination.mkdir(parents=True)
     public={name for name in app.PUBLIC_FILES if name.endswith('.html')}|{'public.css','public.js','i18n.js','assets/smart-power-logo.png'}
     assets={'app.js','app.css','auth.css','profile.js','staff.js'}
-    config='<script src="/hosting-config.js"></script>'
+    config='<link rel="icon" type="image/png" href="/assets/smart-power-logo.png"><script src="/hosting-config.js"></script>'
     for name in sorted(public|assets):
         target=destination/name;target.parent.mkdir(parents=True,exist_ok=True)
         if name.endswith('.html'):target.write_text((SOURCE/name).read_text().replace('</head>',config+'</head>'))
@@ -37,7 +37,7 @@ def build(destination=DESTINATION):
     for name in app.DISABLED_PAGES:redirects.append(f'/{name} /404.html 404!')
     redirects+=['/smart_power.db /404.html 404!','/server.py /404.html 404!','/tests/* /404.html 404!']
     (destination/'_redirects').write_text('\n'.join(redirects)+'\n')
-    (destination/'404.html').write_text('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/public.css"><title>Page not found | Smart Power</title></head><body><main class="page-intro"><h1>Page not found</h1><a class="button solid" href="/">Back to website</a></main></body></html>')
+    (destination/'404.html').write_text('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/public.css"><link rel="icon" type="image/png" href="/assets/smart-power-logo.png"><title>Page not found | Smart Power</title></head><body><main class="page-intro"><h1>Page not found</h1><a class="button solid" href="/">Back to website</a></main></body></html>')
     assert not any((destination/name).exists() for name in templates)
     assert not any(p.suffix in {'.db','.py','.pyc'} for p in destination.rglob('*') if p.is_file())
     print(f'Full Netlify build ready: {len(public)} public assets, {len(templates)} authenticated pages, external Postgres + private Blobs.')

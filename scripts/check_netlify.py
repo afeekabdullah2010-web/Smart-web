@@ -13,6 +13,7 @@ class Links(HTMLParser):
 with tempfile.TemporaryDirectory() as tmp:
     root=build(Path(tmp)/'site');rules=(root/'_redirects').read_text()
     for page in root.glob('*.html'):
+        assert 'rel="icon" type="image/png" href="/assets/smart-power-logo.png"' in page.read_text(),page.name
         parser=Links();parser.feed(page.read_text())
         for value in parser.references:
             u=urlparse(value)

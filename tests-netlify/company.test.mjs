@@ -185,3 +185,14 @@ test('Staff actions notify Admin and office updates reach only the correct Staff
   assert.equal((await f.request('/api/notifications')).status,401);
  }finally{await f.db.close()}
 });
+
+test('Contact requests reject invalid phones with a clear reason and valid requests notify Admin',async()=>{
+ const f=await fixture();try{
+  const data={name:'Contact Visitor',phone:'045558',type:'Engineering works',message:'Please call about electrical work.'};
+  const invalid=await f.request('/api/consultations',{data});assert.equal(invalid.status,400);assert.match(invalid.json.error,/7–15 digits/);
+  assert.equal((await f.request('/api/admin/consultations',{as:f.admin})).json.length,0);
+  const valid=await f.request('/api/consultations',{data:{...data,phone:'+94 77 123 4567'}});assert.equal(valid.status,201,valid.text);
+  const requests=(await f.request('/api/admin/consultations',{as:f.admin})).json;assert.equal(requests.length,1);assert.equal(requests[0].name,data.name);
+  assert.ok((await f.request('/api/admin/notifications',{as:f.admin})).json.some(n=>n.name==='New consultation request'&&n.details===data.name));
+ }finally{await f.db.close()}
+});
