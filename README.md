@@ -64,3 +64,7 @@ This runs the built website over local HTTPS with the hosted-style backend, pers
 The external database must exist, DATABASE_URL must be configured, and the initial Netlify build/migration must finish before the online app is usable. A successful local test is not confirmation that a production deployment has finished. Check the Netlify deploy log and test login/enquiry submission on the actual live domain after deploying.
 
 Netlify static response headers are configured in `netlify.toml`; function responses set their own cache/security headers in code. Site-link metadata (`.netlify/`), generated private templates, dependencies, build output and environment files are gitignored.
+
+## Android and iPhone app
+
+The shared customer/Admin/Staff mobile app is in [`mobile/`](mobile/README.md), linked to Expo project `46643a71-a257-4649-b510-18b21a89fbfd`. It uses the existing live website and accounts. Select `mobile` as the app directory in Expo; preview Android builds produce an APK. See the mobile README for running, signing and iPhone distribution.

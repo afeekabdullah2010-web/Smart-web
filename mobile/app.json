@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "Smart Power",
+    "slug": "smart-power-engineering",
+    "version": "1.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "scheme": "smartpower",
+    "ios": {
+      "bundleIdentifier": "com.smartpowerengineering.app",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Take a site photo or profile photo to upload to Smart Power.",
+        "NSPhotoLibraryUsageDescription": "Choose a profile photo, signature or site photo to upload.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.smartpowerengineering.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#eaf6ff"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "allowBackup": false
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sharing"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "46643a71-a257-4649-b510-18b21a89fbfd"
+      }
+    }
+  }
+}
