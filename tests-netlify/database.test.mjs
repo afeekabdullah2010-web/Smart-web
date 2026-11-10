@@ -24,11 +24,11 @@ test('external database configuration requires credentials and verified TLS',()=
 test('external migration runner is repeatable and preserves saved records',async()=>{
  const db=new PGlite();
  try{
-  assert.equal(await applyMigrations(clientFor(db)),1);
+  assert.equal(await applyMigrations(clientFor(db)),2);
   await db.query("INSERT INTO sp_users(name,email,role,password_hash,created_at) VALUES('Saved User','saved@example.test','Staff','fixture-only',1)");
   assert.equal(await applyMigrations(clientFor(db)),0);
   assert.equal((await db.query('SELECT name FROM sp_users')).rows[0].name,'Saved User');
-  assert.equal((await db.query('SELECT count(*) AS count FROM sp_schema_migrations')).rows[0].count,1);
+  assert.equal((await db.query('SELECT count(*) AS count FROM sp_schema_migrations')).rows[0].count,2);
  }finally{await db.close()}
 });
 

@@ -1,4 +1,4 @@
-export type AccountRole = 'Admin' | 'Staff' | null;
+export type AccountRole = 'Admin' | 'Staff' | 'Client' | null;
 export type Tab = 'home' | 'services' | 'projects' | 'contact' | 'workspace';
 export const DEFAULT_SITE = 'https://smpowenginnworks.netlify.app';
 
@@ -24,12 +24,14 @@ export function externalKind(value: string): 'web' | 'contact' | null {
   return null;
 }
 export function tabUrl(tab: Tab, origin: string, role: AccountRole): string {
-  const paths = { home: '/', services: '/services.html', projects: '/our-projects.html', contact: '/contact.html', workspace: role === 'Admin' ? '/admin.html' : role === 'Staff' ? '/staff-dashboard.html' : '/auth/login' };
+  const dashboard = role === 'Admin' ? '/admin.html' : role === 'Staff' ? '/staff-dashboard.html' : role === 'Client' ? '/api/mobile/client/dashboard' : '/api/mobile/entry';
+  const paths = { home: role ? dashboard : '/', services: '/services.html', projects: '/our-projects.html', contact: role === 'Client' ? '/api/mobile/client/request' : '/contact.html', workspace: dashboard };
   return origin + paths[tab];
 }
 export function tabForUrl(url: string): Tab {
   const path = new URL(url).pathname;
-  if (path.startsWith('/api/staff/') || path.startsWith('/api/admin/') || path.startsWith('/auth/') || /^\/(admin|profile|staff-|team|materials|finance|clients|reports|settings|projects\.html)/.test(path)) return 'workspace';
+  if (path.startsWith('/api/mobile/client/request')) return 'contact';
+  if (path.startsWith('/api/mobile/') || path.startsWith('/api/staff/') || path.startsWith('/api/admin/') || path.startsWith('/auth/') || /^\/(admin|profile|staff-|team|materials|finance|clients|reports|settings|projects\.html)/.test(path)) return 'workspace';
   if (path.startsWith('/service')) return 'services';
   if (path.startsWith('/our-projects')) return 'projects';
   if (path.startsWith('/contact')) return 'contact';
@@ -43,4 +45,9 @@ export function downloadName(value: unknown, mime: string): string {
   const name = String(value || 'smart-power').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^\.+/, '').slice(0, 90) || 'smart-power';
   const ext = mime === 'text/csv' ? '.csv' : '.html';
   return name.toLowerCase().endsWith(ext) ? name : name + ext;
+}
+
+export function mobileAuthUrl(kind: 'login' | 'register', role: Exclude<AccountRole, null>, origin: string): string {
+ if (kind === 'register' && role === 'Admin') throw new Error('Admin signup is not public.');
+ return origin + '/api/mobile/auth/' + kind + '?role=' + role;
 }

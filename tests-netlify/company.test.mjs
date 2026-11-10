@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {createCompany,validateSetupKey} from '../netlify/lib/company.mjs';
 
 async function fixture(){
- const db=new PGlite();await db.exec(await readFile(new URL('../database/migrations/20261101180000_company.sql',import.meta.url),'utf8'));
+ const db=new PGlite();await db.exec(await readFile(new URL('../database/migrations/20261101180000_company.sql',import.meta.url),'utf8'));await db.exec(await readFile(new URL('../database/migrations/20261110090000_mobile_clients.sql',import.meta.url),'utf8'));
  const pool={query:(...args)=>db.query(...args),connect:async()=>({query:(...args)=>db.query(...args),release(){}})};
  const files=new Map();const store={set:async(k,v)=>files.set(k,Buffer.from(v)),get:async k=>files.get(k)||null};
  const handler=createCompany({pool,store,templates:{'admin.html':'<h1>Admin</h1>','staff-dashboard.html':'<h1>Staff</h1>','profile.html':'<h1>Profile</h1>'},env:k=>k==='SMART_POWER_SETUP_KEY'?'owner-setup-key-with-32-characters':undefined});
@@ -194,5 +194,42 @@ test('Contact requests reject invalid phones with a clear reason and valid reque
   const valid=await f.request('/api/consultations',{data:{...data,phone:'+94 77 123 4567'}});assert.equal(valid.status,201,valid.text);
   const requests=(await f.request('/api/admin/consultations',{as:f.admin})).json;assert.equal(requests.length,1);assert.equal(requests[0].name,data.name);
   assert.ok((await f.request('/api/admin/notifications',{as:f.admin})).json.some(n=>n.name==='New consultation request'&&n.details===data.name));
+ }finally{await f.db.close()}
+});
+
+test('app Client accounts are separate, private and cannot create or enter Admin/Staff accounts',async()=>{
+ const f=await fixture();try{
+  async function mobileRegister(role,name,email){
+   const created=await f.request('/api/mobile/auth/register?role='+role,{form:{name,email,password:'Test-password-123',confirm:'Test-password-123',role:'Admin'}});
+   assert.equal(created.status,303,created.text);
+   const cookie=created.headers.getSetCookie().filter(v=>!v.includes('Max-Age=0')).map(v=>v.split(';')[0]).join('; ');
+   const who={cookie};Object.assign(who,(await f.request('/api/mobile/me',{as:who})).json);return who;
+  }
+  assert.equal((await f.request('/api/mobile/auth/register?role=Admin',{form:{}})).status,403);
+  const client=await mobileRegister('Client','Client One','client1@example.test'),other=await mobileRegister('Client','Client Two','client2@example.test');
+  assert.equal(client.role,'Client');
+  const clientDashboard=(await f.request('/api/mobile/dashboard-data?role=Admin',{as:client})).json;assert.equal(clientDashboard.role,'Client');assert.equal(clientDashboard.people,undefined);
+  const staffDashboard=(await f.request('/api/mobile/dashboard-data?user='+f.admin.id,{as:f.staff})).json;assert.equal(staffDashboard.role,'Staff');assert.equal(staffDashboard.people,undefined);
+  const adminDashboard=(await f.request('/api/mobile/dashboard-data',{as:f.admin})).json;assert.equal(adminDashboard.role,'Admin');assert.ok(adminDashboard.people.some(p=>p.email==='client1@example.test'&&p.role==='Client'));assert.ok(adminDashboard.people.some(p=>p.email==='staff1@example.test'&&p.role==='Staff'));assert.ok(adminDashboard.people.some(p=>p.role==='Admin'));assert.equal(JSON.stringify(adminDashboard).includes('password_hash'),false);
+
+  assert.equal((await f.db.query("SELECT id FROM sp_users WHERE email='client1@example.test'")).rows.length,0);
+  assert.equal((await f.request('/api/admin/team',{as:client})).status,401);
+  assert.equal((await f.request('/api/staff/tasks',{as:client})).status,401);
+  assert.equal((await f.request('/api/mobile/client/dashboard',{as:f.staff})).status,303);
+  const bad=await f.request('/api/mobile/auth/login?role=Admin',{form:{email:'client1@example.test',password:'Test-password-123'}});assert.equal(bad.headers.has('set-cookie'),false);
+  const created=await f.request('/api/mobile/client/request',{as:client,form:{csrf:client.csrf,phone:'0771234567',type:'Engineering works',message:'Private Client One project',mobile_client_id:other.id}});assert.equal(created.status,303,created.text);
+  assert.equal((await f.request('/api/mobile/client/request',{as:client,form:{phone:'0771234567',type:'Engineering',message:'No CSRF'}})).status,403);
+  assert.match((await f.request('/api/mobile/client/dashboard',{as:client})).text,/Private Client One project/);
+  assert.doesNotMatch((await f.request('/api/mobile/client/dashboard?user='+client.id,{as:other})).text,/Private Client One project/);
+  const request=(await f.request('/api/admin/consultations',{as:f.admin})).json.find(r=>r.message==='Private Client One project');assert.equal(request.mobile_client_id,client.id);
+  const changed=await f.request('/api/admin/consultations',{as:f.admin,data:{id:request.id,data:{...request,status:'Contacted',mobile_client_id:other.id}}});assert.equal(changed.status,200,changed.text);
+  const updated=(await f.request('/api/mobile/client/dashboard',{as:client})).text;assert.match(updated,/Request updated/);assert.match(updated,/Contacted/);
+  assert.doesNotMatch((await f.request('/api/mobile/client/dashboard',{as:other})).text,/Request updated/);
+  assert.ok((await f.request('/api/admin/notifications',{as:f.admin})).json.some(n=>n.name==='New client joined'));
+  const mobileStaff=await mobileRegister('Staff','Mobile Staff','mobile-staff@example.test');assert.equal(mobileStaff.role,'Staff');assert.ok((await f.request('/api/admin/team',{as:f.admin})).json.some(r=>r.email==='mobile-staff@example.test'));
+  const website=await f.request('/auth/login');assert.doesNotMatch(website.text,/>Client</);assert.match(website.text,/Secure sign in/);
+  assert.equal((await f.request('/api/mobile/auth/logout',{as:client,form:{csrf:'wrong'}})).status,403);
+  assert.equal((await f.request('/api/mobile/auth/logout',{as:client,form:{csrf:client.csrf}})).status,303);
+  assert.equal((await f.request('/api/mobile/me',{as:client})).json.role,null);
  }finally{await f.db.close()}
 });
