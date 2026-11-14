@@ -18,8 +18,8 @@ async function external(url){
  if(kind==='web'){const answer=await dialog.showMessageBox(window,{type:'question',title:'Open in browser?',message:new URL(url).hostname,buttons:['Cancel','Open'],defaultId:0,cancelId:0});if(answer.response!==1)return}
  try{await shell.openExternal(url)}catch{error('No application is available to open this link.')}
 }
-async function load(url){hide();update({url,loading:true,error:null,dashboard:null});try{await remote.webContents.loadURL(url)}catch{if(!closing)update({loading:false,error:'Unable to connect. Check your internet connection.'})}}
-function follow(event,url){url=event.url||url;hide();if(common.isInternal(url,ORIGIN)){update({url,loading:true,error:null,dashboard:null});return}event.preventDefault();update({loading:false});void external(url);}
+async function load(url){hide();update({url,loading:true,error:null,dashboard:null});try{await remote.webContents.loadURL(url)}catch{if(!closing&&state.url===url)update({loading:false,error:'Unable to connect. Check your internet connection.'})}}
+function follow(event,url){url=event.url||url;if(common.isInternal(url,ORIGIN)){hide();update({url,loading:true,error:null,dashboard:null});return}event.preventDefault();void external(url);}
 async function message(data){
  if(!data||typeof data!=='object')return;
  if(data.type==='session'){
@@ -93,7 +93,7 @@ async function createWindow(){
   if(!common.isInternal(remote.webContents.getURL(),ORIGIN))return;
   try{
    await remote.webContents.executeJavaScript('window.__smartPowerDesktopQueue=[];window.ReactNativeWebView={postMessage:function(value){if(window.__smartPowerDesktopQueue.length<30)window.__smartPowerDesktopQueue.push(String(value))}};'+bridgeScript);
-   update({url:remote.webContents.getURL(),loading:false,canGoBack:remote.webContents.navigationHistory.canGoBack()});await poll();
+   update({url:remote.webContents.getURL(),loading:false,error:null,canGoBack:remote.webContents.navigationHistory.canGoBack()});await poll();
   }catch{update({loading:false,error:'Please refresh your workspace.'})}
  });
  window.on('resize',()=>{hide();surface=null});
