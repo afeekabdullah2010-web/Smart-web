@@ -68,3 +68,7 @@ Netlify static response headers are configured in `netlify.toml`; function respo
 ## Android and iPhone app
 
 The shared customer/Admin/Staff mobile app is in [`mobile/`](mobile/README.md), linked to Expo project `46643a71-a257-4649-b510-18b21a89fbfd`. It uses the existing live website and accounts. Select `mobile` as the app directory in Expo; preview Android builds produce an APK. See the mobile README for running, signing and iPhone distribution.
+
+## Windows desktop app
+
+The `.exe` installer project is in [`desktop/`](desktop/README.md). Its welcome/dashboard screens import the same phone components, while Windows window/browser integration is separate. The **Build Windows EXE** GitHub Actions workflow builds a new installer artifact when shared phone or desktop sources change.

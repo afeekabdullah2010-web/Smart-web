@@ -1,0 +1,18 @@
+import {spawnSync} from 'node:child_process';
+import {mkdir,rm,cp,readFile,writeFile} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+import {join,resolve} from 'node:path';
+import {build} from 'esbuild';
+import {createHash} from 'node:crypto';
+const root=resolve(fileURLToPath(new URL('../..',import.meta.url))),mobile=join(root,'mobile'),desktop=join(root,'desktop');
+const cli=join(mobile,'node_modules/expo/bin/cli');
+const result=spawnSync(process.execPath,[cli,'export','--platform','web','--output-dir',join(desktop,'ui')],{cwd:mobile,env:{...process.env,EXPO_OFFLINE:'1'},stdio:'inherit'});if(result.status!==0)process.exit(result.status||1);
+await mkdir(join(desktop,'runtime'),{recursive:true});await mkdir(join(desktop,'assets'),{recursive:true});
+await cp(join(mobile,'assets/icon.png'),join(desktop,'assets/icon.png'));
+await build({entryPoints:[join(mobile,'src/navigation.ts')],bundle:true,platform:'node',format:'cjs',outfile:join(desktop,'runtime/navigation.cjs')});
+await build({entryPoints:[join(mobile,'src/dashboard.ts')],bundle:true,platform:'node',format:'cjs',outfile:join(desktop,'runtime/dashboard.cjs')});
+const {bridgeScript}=await import(new URL('../../mobile/src/bridge.ts',import.meta.url));
+await writeFile(join(desktop,'runtime/bridge.json'),JSON.stringify({script:bridgeScript}));
+const files=['src/components/Welcome.tsx','src/components/Dashboard.tsx','src/navigation.ts','src/bridge.ts'];const hashes={};for(const file of files)hashes[file]=createHash('sha256').update(await readFile(join(mobile,file))).digest('hex');
+await writeFile(join(desktop,'runtime/shared-source.json'),JSON.stringify({commit:process.env.GITHUB_SHA||null,files:hashes},null,2));
+console.log('Windows UI built directly from shared phone screens.');

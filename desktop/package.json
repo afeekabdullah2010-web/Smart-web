@@ -1,0 +1,31 @@
+{
+  "name":"smart-power-desktop",
+  "version":"1.1.0",
+  "private":true,
+  "description":"Smart Power Windows application for Clients, Staff and Admin",
+  "author":"Smart Power Engineering Works",
+  "main":"src/main.cjs",
+  "scripts":{
+    "start":"electron .",
+    "prepare:ui":"node scripts/prepare-ui.mjs",
+    "test":"node tests/policy.test.cjs",
+    "smoke":"electron . --smoke-test",
+    "dist:win":"electron-builder --win nsis --x64 --publish never"
+  },
+  "devDependencies":{
+    "electron":"45.3.2",
+    "electron-builder":"26.18.0",
+    "esbuild":"^0.25.0"
+  },
+  "build":{
+    "appId":"com.smartpowerengineering.desktop",
+    "productName":"Smart Power",
+    "artifactName":"Smart-Power-Setup-${version}.${ext}",
+    "directories":{"output":"release"},
+    "files":["src/**","runtime/**","ui/**","assets/**","package.json"],
+    "asar":true,
+    "win":{"target":[{"target":"nsis","arch":["x64"]}],"icon":"assets/icon.png"},
+    "nsis":{"oneClick":false,"perMachine":false,"allowToChangeInstallationDirectory":true,"createDesktopShortcut":true,"createStartMenuShortcut":true},
+    "publish":null
+  }
+}

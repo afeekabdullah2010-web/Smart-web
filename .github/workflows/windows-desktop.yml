@@ -1,0 +1,62 @@
+name: Build Windows EXE
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - 'desktop/**'
+      - '.github/workflows/windows-desktop.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      EXPO_OFFLINE: '1'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            mobile/package-lock.json
+            desktop/package-lock.json
+      - name: Install shared phone screen dependencies
+        run: npm ci --prefix mobile
+      - name: Install Windows packager
+        run: npm ci --prefix desktop
+      - name: Install Electron runtime
+        run: node desktop/node_modules/electron/install.js
+      - name: Verify shared screens
+        run: |
+          npm run lint --prefix mobile
+          npm run typecheck --prefix mobile
+          npm test --prefix mobile
+          npm test --prefix desktop
+      - name: Build Windows UI from phone components
+        run: npm run prepare:ui --prefix desktop
+      - name: Run real Electron smoke test
+        run: npm run smoke --prefix desktop
+      - name: Set Windows build version
+        shell: pwsh
+        run: |
+          $mobile = Get-Content mobile/package.json | ConvertFrom-Json
+          $parts = $mobile.version.Split('.')
+          $version = "$($parts[0]).$($parts[1]).${{ github.run_number }}"
+          npm version $version --prefix desktop --no-git-tag-version --allow-same-version
+      - name: Create Windows installer
+        run: npm run dist:win --prefix desktop
+      - name: Upload installable EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: Smart-Power-Windows
+          path: desktop/release/*.exe
+          if-no-files-found: error
+          retention-days: 30
