@@ -1,7 +1,7 @@
 """Read an owner's EAS Android build and download its official artifact for local verification.
 No APK is uploaded to a third-party scanning service. Never prints signed download URLs.
 """
-import hashlib,json,os,re,urllib.request,urllib.parse,uuid,zipfile
+import hashlib,json,os,re,urllib.request,urllib.parse,urllib.error,uuid,zipfile
 from pathlib import Path
 BUILD_ID=str(uuid.UUID(os.environ.get('EXPO_BUILD_ID','57e311ac-a61b-44f6-ba6e-8fc1015e9781')))
 PROJECT_ID='46643a71-a257-4649-b510-18b21a89fbfd'
@@ -10,6 +10,13 @@ query='''query BuildForVerification($buildId: ID!) { build { byId(buildId: $buil
 request=urllib.request.Request('https://api.expo.dev/graphql',data=json.dumps({'query':query,'variables':{'buildId':BUILD_ID}}).encode(),headers={'Content-Type':'application/json','User-Agent':'SmartPower-owned-APK-verification/1.0'})
 try:
  with urllib.request.urlopen(request,timeout=60) as response:data=json.load(response)
+except urllib.error.HTTPError as error:
+ try:
+  failure=json.loads(error.read());messages='; '.join(str(item.get('message',''))[:180] for item in failure.get('errors',[]))
+ except Exception:messages=''
+ summary='EAS returned HTTP '+str(error.code)+('. '+messages if messages else '')
+ (OUT/'verification-incomplete.json').write_text(json.dumps({'buildId':BUILD_ID,'apkVerified':False,'reason':summary},indent=2)+'\n')
+ raise SystemExit(summary+' No APK verification completed; the original APK file may be required.')
 except Exception as error:
  raise SystemExit('Unable to read the EAS build. No APK verification completed. '+type(error).__name__)
 if data.get('errors'):
