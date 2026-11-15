@@ -1,0 +1,52 @@
+name: Verify official Android APK
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-apk-verification.yml'
+      - 'scripts/verify_android_apk.py'
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'Smart Power Expo build UUID'
+        required: true
+        default: '57e311ac-a61b-44f6-ba6e-8fc1015e9781'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPO_BUILD_ID: ${{ inputs.build_id || '57e311ac-a61b-44f6-ba6e-8fc1015e9781' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the owner's official EAS APK
+        run: python3 scripts/verify_android_apk.py
+      - name: Verify signing certificate and permissions
+        shell: bash
+        run: |
+          signer=$(rg --files "$ANDROID_HOME/build-tools" | rg '/apksigner$' | sort -V | tail -1)
+          analyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          "$signer" verify --verbose --print-certs apk-verification/Smart-Power-original.apk > apk-verification/signature.txt
+          "$analyzer" manifest application-id apk-verification/Smart-Power-original.apk > apk-verification/package-id.txt
+          test "$(cat apk-verification/package-id.txt)" = 'com.smartpowerengineering.app'
+          "$analyzer" manifest permissions apk-verification/Smart-Power-original.apk > apk-verification/permissions.txt
+      - name: Install local antivirus scanner
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clamav
+          sudo systemctl stop clamav-freshclam || true
+          sudo freshclam --stdout
+      - name: Scan APK locally on the runner
+        run: clamscan --infected --log=apk-verification/antivirus.txt apk-verification/Smart-Power-original.apk
+      - name: Upload verification reports only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Smart-Power-APK-verification
+          path: |
+            apk-verification/*.json
+            apk-verification/*.txt
+          if-no-files-found: ignore
+          retention-days: 30
