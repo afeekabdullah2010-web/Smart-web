@@ -19,6 +19,8 @@ jobs:
     env:
       EXPO_OFFLINE: '1'
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -52,7 +54,13 @@ jobs:
           $version = "$($parts[0]).$($parts[1]).${{ github.run_number }}"
           npm version $version --prefix desktop --no-git-tag-version --allow-same-version
       - name: Create Windows installer
-        run: npm run dist:win --prefix desktop
+        shell: pwsh
+        run: |
+          if ($env:CSC_LINK) {
+            npm run dist:win --prefix desktop -- --config.forceCodeSigning=true
+          } else {
+            npm run dist:win --prefix desktop
+          }
       - name: Upload installable EXE
         uses: actions/upload-artifact@v4
         with:

@@ -6,7 +6,7 @@ from pathlib import Path
 BUILD_ID=str(uuid.UUID(os.environ.get('EXPO_BUILD_ID','57e311ac-a61b-44f6-ba6e-8fc1015e9781')))
 PROJECT_ID='46643a71-a257-4649-b510-18b21a89fbfd'
 OUT=Path('apk-verification');OUT.mkdir(exist_ok=True)
-query='''query BuildForVerification($buildId: ID!) { build { byId(buildId: $buildId) { id status platform gitCommitHash appVersion appBuildVersion app { id } artifacts { buildUrl applicationArchiveUrl } } } }'''
+query='''query BuildForVerification($buildId: ID!) { builds { byId(buildId: $buildId) { id status platform gitCommitHash appVersion appBuildVersion app { id } artifacts { buildUrl applicationArchiveUrl } } } }'''
 request=urllib.request.Request('https://api.expo.dev/graphql',data=json.dumps({'query':query,'variables':{'buildId':BUILD_ID}}).encode(),headers={'Content-Type':'application/json','User-Agent':'SmartPower-owned-APK-verification/1.0'})
 try:
  with urllib.request.urlopen(request,timeout=60) as response:data=json.load(response)
@@ -22,7 +22,7 @@ except Exception as error:
 if data.get('errors'):
  messages='; '.join(str(e.get('message','Access denied'))[:180] for e in data['errors'])
  raise SystemExit('EAS did not permit anonymous artifact access; ask the owner for the APK file. '+messages)
-build=data['data']['build']['byId']
+build=data['data']['builds']['byId']
 if not build or build['app']['id']!=PROJECT_ID or build['platform']!='ANDROID' or build['status']!='FINISHED':raise SystemExit('Expected a finished Android build belonging to the Smart Power project.')
 artifact=build.get('artifacts') or {};url=artifact.get('applicationArchiveUrl') or artifact.get('buildUrl')
 def allowed(value):

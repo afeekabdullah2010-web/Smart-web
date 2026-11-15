@@ -35,3 +35,9 @@ Find the installer in `desktop/release/`. `npm start --prefix desktop` runs the 
 The packaged UI uses a local secure protocol and a narrow context-isolated preload API. The company workspace runs in a separate sandboxed WebContentsView without Node integration or a filesystem preload. Only the configured company HTTPS origin stays inside that view. External HTTPS links require confirmation; file, JavaScript and other app-launch schemes are blocked. Role and customer ownership remain enforced by the server.
 
 CSV/payslip saves require the user's save dialog and only accept the existing report/payslip endpoints. Camera access requires a native prompt. Passwords and CSRF tokens stay in the company browser session; only sanitized session/dashboard messages reach the shared renderer. The app needs internet access for company records.
+
+## Windows publisher signing
+
+SmartScreen “unrecognized app” is a publisher/reputation warning, not by itself an antivirus detection. The current installer is unsigned. A self-signed certificate or a source-code change cannot establish Microsoft publisher trust. Valid trusted Windows Authenticode signing and reputation, or Microsoft Store distribution, are separate prerequisites; even a newly signed app may initially receive a reputation warning.
+
+The Windows workflow accepts an owner-supplied trusted signing certificate through GitHub Actions secrets `WINDOWS_CSC_LINK` (electron-builder-compatible certificate reference/base64 PFX) and `WINDOWS_CSC_KEY_PASSWORD`. With a certificate configured, the build requires signing to succeed instead of silently shipping unsigned. Do not paste certificates, passwords or private keys into chat or commit them. Hardware/cloud signing providers may need their own signing integration; these secrets alone do not create or purchase a certificate. Never disable Defender to distribute the application.
