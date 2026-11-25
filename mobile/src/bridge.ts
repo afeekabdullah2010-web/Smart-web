@@ -1,13 +1,17 @@
 // Runs inside the trusted company origin: cookies stay inside the WebView.
 export const bridgeScript = `(function(){
  if(window.__smartPowerMobile)return true;window.__smartPowerMobile=true;
- var style=document.createElement('style');style.textContent='.site-header,.sidebar,body>footer,body>main>header{display:none!important}.app{display:block!important}main,#workspace,#staffWorkspace{padding:18px!important}.page-intro{padding:24px 18px!important}.page-intro h1{font-size:32px!important}a.portal-btn{display:none!important}'+(location.pathname.indexOf('/api/mobile/')===0?'body>footer{display:none!important}':'');document.head.appendChild(style);
+ var style=document.createElement('style');style.textContent='.site-header,.sidebar,body>footer,body>main>header{display:none!important}.app{display:block!important}html,body{max-width:100%!important;overflow-x:hidden!important}main,#workspace,#staffWorkspace{padding:14px!important;max-width:100%!important}.page-intro{padding:20px 14px!important}.page-intro h1{font-size:28px!important}.card,.panel,.workspace-card{max-width:100%!important;overflow:hidden!important}table{display:block!important;width:100%!important;max-width:100%!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important}thead,tbody,tr{width:max-content!important;min-width:100%!important}th,td{min-width:112px!important;white-space:normal!important;word-break:normal!important;overflow-wrap:break-word!important;vertical-align:top!important}th:last-child,td:last-child{min-width:96px!important}input,select,textarea,button{max-width:100%!important}a.portal-btn{display:none!important}'+(location.pathname.indexOf('/api/mobile/')===0?'body>footer{display:none!important}':'');document.head.appendChild(style);
  var send=function(data){window.ReactNativeWebView.postMessage(JSON.stringify(data))};
- fetch('/api/mobile/me',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(u){
-  send({type:'session',role:u&&u.role||null,id:u&&u.id});
-  if(u&&u.role&&['/admin.html','/staff-dashboard.html','/api/mobile/client/dashboard'].includes(location.pathname)&&!new URLSearchParams(location.search).has('appWorkspace'))
-   return fetch('/api/mobile/dashboard-data',{credentials:'same-origin',cache:'no-store'}).then(function(r){if(!r.ok)throw Error('Dashboard unavailable');return r.json()}).then(function(data){send({type:'dashboard',dashboard:data})});
- }).catch(function(){});
+ var dashboardAttempts=0;
+ function loadDashboard(u){
+  if(!u||!u.role||!['/admin.html','/staff-dashboard.html','/api/mobile/client/dashboard'].includes(location.pathname)||new URLSearchParams(location.search).has('appWorkspace'))return;
+  dashboardAttempts++;
+  fetch('/api/mobile/dashboard-data',{credentials:'same-origin',cache:'no-store'}).then(function(r){if(!r.ok)throw Error('Dashboard unavailable');return r.json()}).then(function(data){send({type:'dashboard',dashboard:data})}).catch(function(error){if(dashboardAttempts<4)setTimeout(function(){loadDashboard(u)},dashboardAttempts*1200);else send({type:'dashboard-error',message:error.message})});
+ }
+ fetch('/api/mobile/me',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(u){send({type:'session',role:u&&u.role||null,id:u&&u.id});loadDashboard(u)}).catch(function(){});
+ function removeNetlifyBadge(){document.querySelectorAll('a,iframe,[style*="position: fixed"],[style*="position:fixed"]').forEach(function(node){var href=(node.getAttribute('href')||node.getAttribute('src')||'').toLowerCase(),label=(node.getAttribute('aria-label')||'').toLowerCase(),words=(node.textContent||'').trim().toLowerCase();if((href.indexOf('netlify')>=0||label.indexOf('powered by netlify')>=0||words==='powered by netlify')&&node!==document.body&&node!==document.documentElement)node.remove()})}
+ removeNetlifyBadge();new MutationObserver(removeNetlifyBadge).observe(document.documentElement,{childList:true,subtree:true});
  var workspace=new URLSearchParams(location.search).get('appWorkspace');
  if(['users','consultations','tasks','payroll','stafflogs','workupdates','support','notifications'].includes(workspace)&&window.spAccountReady)window.spAccountReady.then(function(){
   var selector=location.pathname==='/staff-dashboard.html'?(workspace==='notifications'?'[data-my-notifications]':'[data-support]'):'[data-action="'+workspace+'"]';
