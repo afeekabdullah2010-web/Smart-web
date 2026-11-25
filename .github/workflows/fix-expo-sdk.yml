@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - .github/workflows/fix-expo-sdk.yml
+      - mobile/src/bridge.ts
   workflow_dispatch:
 
 permissions:
