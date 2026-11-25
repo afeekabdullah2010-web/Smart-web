@@ -1,0 +1,46 @@
+name: Fix Expo SDK package versions
+
+on:
+  push:
+    paths:
+      - .github/workflows/fix-expo-sdk.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-and-verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install Expo SDK 58 compatible patch versions
+        run: npx expo install expo@~58.0.26 expo-constants@~58.0.16 expo-file-system@~58.0.14 expo-linking@~58.0.17 expo-network@~58.0.5 expo-print@~58.0.9 expo-router@~58.0.32 expo-sharing@~58.0.23 expo-status-bar@~58.0.5 --npm
+      - name: Verify Expo dependencies
+        run: npx expo-doctor
+      - name: Type check
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+      - name: Lint
+        run: npm run lint
+      - name: Commit verified dependency lockfile
+        working-directory: .
+        run: |
+          if git diff --quiet -- mobile/package.json mobile/package-lock.json; then
+            echo "Expo dependencies already match SDK 58."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mobile/package.json mobile/package-lock.json
+          git commit -m "Align Expo packages with SDK 58"
+          git push
