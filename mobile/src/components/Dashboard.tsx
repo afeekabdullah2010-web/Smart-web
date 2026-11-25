@@ -25,6 +25,7 @@ export default function Dashboard({ data, onPage, onRetry, onSignOut }: { data: 
    <View style={styles.filters}>{(['company','people'] as const).map(item=><Pressable key={item} accessibilityRole="button" accessibilityState={{selected:adminTab===item}} onPress={()=>setAdminTab(item)} style={[styles.chip,adminTab===item&&styles.activeChip]}><Text style={[styles.chipText,adminTab===item&&styles.activeChipText]}>{item==='company'?'Company':'People · '+(data.people||[]).length}</Text></Pressable>)}</View>
    {adminTab==='company'?<>
    <Text style={styles.section}>Manage your company</Text>
+   <Action label="People & account control" hint="Client and Staff profiles, phone numbers and password reset" onPress={()=>onPage('/api/mobile/admin/accounts')} />
    <Action label="Client requests" hint="Review and update enquiries" onPress={()=>onPage('/admin.html?appWorkspace=consultations')} />
    <Action label="Staff directory" hint="Staff records and assigned sites" onPress={()=>onPage('/team.html')} />
    <Action label="Tasks & work" hint="Assign tasks to your staff" onPress={()=>onPage('/admin.html?appWorkspace=tasks')} />
