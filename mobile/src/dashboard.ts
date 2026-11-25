@@ -4,6 +4,7 @@ export interface DashboardData {
  userId: number; role: 'Admin' | 'Staff' | 'Client'; name: string;
  summary: { staff?: number; clients?: number; projects?: number; requests?: number; open?: number; pending?: number; netSalary?: number | null };
  people?: Person[];
+ activities?: { id: number; name: string; details: string; status: string; created_at: number }[];
  requests?: { id: number; type: string; message: string; status: string }[];
  updates?: { name: string; details: string }[];
  tasks?: { id: number; name: string; site: string; status: string }[];
