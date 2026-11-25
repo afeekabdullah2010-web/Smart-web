@@ -47,7 +47,8 @@ export function createMobile({query,tx,add,notice,syncStaffDirectory,hashPasswor
     const clients=await query('SELECT id,name,email,active FROM sp_mobile_clients ORDER BY name');
     people.push(...clients.map(r=>({...r,key:'client-'+r.id,role:'Client'})));
     const stats=(await query("SELECT kind,count(*) AS count FROM sp_records WHERE kind IN ('projects','consultations') GROUP BY kind"));
-    return json({userId:user.id,role:'Admin',name:user.name,people,summary:{staff:people.filter(r=>r.role==='Staff').length,clients:clients.length,projects:Number(stats.find(r=>r.kind==='projects')?.count||0),requests:Number(stats.find(r=>r.kind==='consultations')?.count||0)}});
+    const activities=(await query("SELECT id,data,created_at FROM sp_records WHERE kind='notifications' ORDER BY id DESC LIMIT 30")).map(r=>({...r.data,id:r.id,created_at:Number(r.created_at)}));
+    return json({userId:user.id,role:'Admin',name:user.name,people,activities,summary:{staff:people.filter(r=>r.role==='Staff').length,clients:clients.length,projects:Number(stats.find(r=>r.kind==='projects')?.count||0),requests:Number(stats.find(r=>r.kind==='consultations')?.count||0)}});
    }
    const tasks=(await query("SELECT id,data FROM sp_records WHERE kind='tasks' AND data->>'user_id'=$1 ORDER BY id DESC",[String(user.id)])).map(r=>({...r.data,id:r.id}));
    const salary=(await query("SELECT data FROM sp_records WHERE kind='payroll' AND data->>'user_id'=$1 AND data->>'status'='Issued' ORDER BY data->>'period' DESC LIMIT 1",[String(user.id)]))[0]?.data;
