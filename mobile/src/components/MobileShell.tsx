@@ -136,7 +136,7 @@ function CompanyApp({ children }: { children: ReactNode }) {
   return <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
     <StatusBar style="light" />
     <View style={styles.header}>
-      <Image source={require('../../assets/icon.png')} style={styles.logo} accessibilityLabel="Smart Power logo" />
+      <Image source={require('../../assets/adaptive-icon.png')} style={styles.logo} accessibilityLabel="Smart Power logo" />
       <View style={styles.brand}><Text style={styles.title}>SMART POWER</Text><Text style={styles.subtitle}>ENGINEERING WORKS</Text></View>
       <Pressable accessibilityRole="button" accessibilityLabel="Go back" disabled={gate || (!canGoBack && !!accountRole)} onPress={goBack} style={[styles.headerButton, !canGoBack && styles.disabled]}><Text style={styles.headerIcon}>‹</Text></Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Refresh page" onPress={retry} style={styles.headerButton}><Text style={styles.headerIcon}>↻</Text></Pressable>
