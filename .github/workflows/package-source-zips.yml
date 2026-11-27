@@ -1,0 +1,113 @@
+name: Package downloadable source ZIPs
+
+on:
+  push:
+    paths:
+      - .github/workflows/package-source-zips.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Prepare website full source
+        run: |
+          mkdir -p package/Smart-Power-Website-Full-Source
+          cp -R i/outputs/smart-power-dashboard package/Smart-Power-Website-Full-Source/website
+          cp -R netlify package/Smart-Power-Website-Full-Source/netlify
+          cp -R database package/Smart-Power-Website-Full-Source/database
+          cp -R scripts package/Smart-Power-Website-Full-Source/scripts
+          cp -R tests-netlify package/Smart-Power-Website-Full-Source/tests-netlify
+          cp netlify.toml package.json package-lock.json package/Smart-Power-Website-Full-Source/
+          find package -type d -name __pycache__ -prune -exec rm -rf {} +
+          find package -type f \( -name '*.pyc' -o -name '*.db' -o -name '.env*' \) -delete
+          cat > package/Smart-Power-Website-Full-Source/START-HERE.txt <<'TXT'
+          SMART POWER WEBSITE — FULL SOURCE
+
+          Included:
+          - Public HTML/CSS/JavaScript pages
+          - Admin, Staff and Client server source
+          - Netlify Functions
+          - PostgreSQL database schema and migrations
+          - Build scripts and tests
+
+          No live customer database, passwords, environment files or secret keys are included.
+
+          Setup:
+          1. Install Node.js 22 or newer and Python 3.
+          2. Run: npm install
+          3. Run: npm test
+          4. Run: npm run build
+          5. Serve the dist/site directory through an HTTP server.
+
+          Login, Admin, Staff, Client and database functions require a configured PostgreSQL
+          DATABASE_URL and the Netlify Functions runtime. They cannot work by double-clicking
+          index.html because browsers cannot safely run server code or a database.
+          TXT
+      - name: Prepare portable public HTML preview
+        run: |
+          mkdir -p package/Smart-Power-Website-Portable-Preview
+          cp -R dist/site/. package/Smart-Power-Website-Portable-Preview/
+          rm -f package/Smart-Power-Website-Portable-Preview/_redirects
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('package/Smart-Power-Website-Portable-Preview')
+          for path in root.rglob('*.html'):
+              text=path.read_text(encoding='utf-8')
+              text=text.replace('href="/','href="./').replace('src="/','src="./')
+              path.write_text(text,encoding='utf-8')
+          PY
+          cat > package/Smart-Power-Website-Portable-Preview/START-HERE.txt <<'TXT'
+          SMART POWER WEBSITE — PORTABLE PUBLIC PREVIEW
+
+          Open index.html to browse the public website offline.
+
+          Public HTML pages, styling, images and navigation are included.
+          Contact submission, login, Admin, Staff, Client and database operations require
+          the Full Source running on a server and do not run from a file:// page.
+          TXT
+      - name: Prepare mobile app source
+        run: |
+          mkdir -p package/Smart-Power-Mobile-App-Source/shared-backend
+          cp -R mobile/. package/Smart-Power-Mobile-App-Source/mobile/
+          cp netlify/lib/mobile.mjs package/Smart-Power-Mobile-App-Source/shared-backend/
+          cp -R database/migrations package/Smart-Power-Mobile-App-Source/shared-backend/migrations
+          find package/Smart-Power-Mobile-App-Source -type d -name node_modules -prune -exec rm -rf {} +
+          cat > package/Smart-Power-Mobile-App-Source/START-HERE.txt <<'TXT'
+          SMART POWER MOBILE APP — SOURCE
+
+          The Expo Android/iPhone source is in mobile/.
+          Shared mobile API source and database migrations are in shared-backend/.
+          Run npm install inside mobile/, then npm test and npm run typecheck.
+          A new APK requires a new Expo/EAS build.
+          No passwords, private keys, live database records or secret environment values are included.
+          TXT
+      - name: Create ZIP archives
+        run: |
+          mkdir -p output
+          cd package
+          zip -qr ../output/Smart-Power-Website-Full-Source.zip Smart-Power-Website-Full-Source
+          zip -qr ../output/Smart-Power-Website-Portable-Preview.zip Smart-Power-Website-Portable-Preview
+          zip -qr ../output/Smart-Power-Mobile-App-Source.zip Smart-Power-Mobile-App-Source
+      - name: Upload ZIPs to official release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload v1.1.3 output/*.zip --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Smart-Power-Separate-Source-ZIPs
+          path: output/*.zip
+          retention-days: 30
